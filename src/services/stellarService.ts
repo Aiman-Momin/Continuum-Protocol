@@ -309,7 +309,7 @@ export const stellarService = {
       const account = await server.loadAccount(publicKey);
       
       
-      const CONTRACT_ID = "CCDQDKGOQJ3EONDHU7EZEB5CWZI6SMOUCIY7KGCTBA5WPO63XVD4735J";
+      const CONTRACT_ID = "CBY2L5ADWFW2RPABNLCWDWSM7IHKKJ2XM6H4GT2E5H5KSFXHDBOLY6OP";
 
    
       const transaction = new TransactionBuilder(account, {
@@ -405,8 +405,7 @@ export const stellarService = {
       return { success: true, hash: (result as any).hash };
     } catch (e: any) {
       console.error("[Soroban] Contract invocation failed:", e);
-     
-      return { success: true, simulated: true };
+      return { success: false, error: e?.message || "Contract invocation failed" };
     }
   },
 

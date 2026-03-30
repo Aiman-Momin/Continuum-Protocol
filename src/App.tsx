@@ -27,6 +27,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { VaultStatus, VaultState, Beneficiary } from './types';
 import { stellarService, WalletType } from './services/stellarService';
+import { contractService } from './services/contractService';
 import ContractInteraction from './components/ContractInteraction';
 import WalletBalance from './components/WalletBalance';
 import StagedReleaseTimeline from './components/StagedReleaseTimeline';
@@ -36,6 +37,21 @@ import InactivityStatus from './components/InactivityStatus';
 import InactivityDistribution from './components/InactivityDistribution';
 import { TransactionToastContainer, Toast } from './components/TransactionToastContainer';
 import { calculateInactivityStatus } from './services/inactivityService';
+
+const STORAGE_KEYS = {
+  nominees: (pubKey: string) => `continuum:nominees:${pubKey}`,
+  timeline: (pubKey: string) => `continuum:timeline:${pubKey}`,
+  distributions: (pubKey: string) => `continuum:distributions:${pubKey}`,
+};
+
+function safeJsonParse<T>(value: string | null): T | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
 
 export interface TransactionRecord {
   id: string;
@@ -76,6 +92,85 @@ export default function App() {
   const [stagedNominees, setStagedNominees] = useState<Record<string, any[]>>({});
   const [stagedTimeline, setStagedTimeline] = useState<Record<string, any[]>>({});
   const [stagedDistributions, setStagedDistributions] = useState<Record<string, any[]>>({});
+
+  // Load staged config from durable storage whenever account changes
+  useEffect(() => {
+    if (!publicKey) return;
+
+    const savedNominees = safeJsonParse<any[]>(localStorage.getItem(STORAGE_KEYS.nominees(publicKey)));
+    const savedTimeline = safeJsonParse<any[]>(localStorage.getItem(STORAGE_KEYS.timeline(publicKey)));
+    const savedDistributions = safeJsonParse<any[]>(localStorage.getItem(STORAGE_KEYS.distributions(publicKey)));
+
+    if (savedNominees) setStagedNominees(prev => ({ ...prev, [publicKey]: savedNominees }));
+    if (savedTimeline) setStagedTimeline(prev => ({ ...prev, [publicKey]: savedTimeline }));
+    if (savedDistributions) setStagedDistributions(prev => ({ ...prev, [publicKey]: savedDistributions }));
+  }, [publicKey]);
+
+  // Load config from chain on login (and cache locally)
+  useEffect(() => {
+    if (!publicKey) return;
+    let cancelled = false;
+
+    const wallet = selectedWallet || WalletType.FREIGHTER;
+    const sign = (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet);
+
+    const load = async () => {
+      try {
+        const [nominees, timeline, distributions] = await Promise.all([
+          contractService.getNominees(publicKey),
+          contractService.getTimeline(publicKey),
+          contractService.getDistributions(publicKey),
+        ]);
+
+        if (cancelled) return;
+
+        if (nominees.length) {
+          const uiNominees = nominees.map((n) => ({
+            id: `${n.address}:${n.role}`,
+            address: n.address,
+            role: n.role,
+            percentage: (n.bps / 100).toFixed(2),
+          }));
+          setStagedNominees((prev) => ({ ...prev, [publicKey]: uiNominees }));
+          localStorage.setItem(STORAGE_KEYS.nominees(publicKey), JSON.stringify(uiNominees));
+        }
+
+        if (timeline.length) {
+          const uiTimeline = timeline.map((s) => ({
+            id: `t-${s.when}-${s.amount}`,
+            date: s.when * 1000,
+            amount: String(s.amount),
+            description: s.memo === "NONE" ? "" : String(s.memo),
+          }));
+          setStagedTimeline((prev) => ({ ...prev, [publicKey]: uiTimeline }));
+          localStorage.setItem(STORAGE_KEYS.timeline(publicKey), JSON.stringify(uiTimeline));
+        }
+
+        if (distributions.length) {
+          const uiDistributions = distributions.map((p) => ({
+            id: `p-${p.inactivity_days}`,
+            inactivityDays: p.inactivity_days,
+            distributions: p.entries.reduce(
+              (acc: Record<string, string>, e) => {
+                acc[e.address] = (e.bps / 100).toFixed(2);
+                return acc;
+              },
+              {},
+            ),
+          }));
+          setStagedDistributions((prev) => ({ ...prev, [publicKey]: uiDistributions }));
+          localStorage.setItem(STORAGE_KEYS.distributions(publicKey), JSON.stringify(uiDistributions));
+        }
+      } catch (e) {
+        console.error("[App] Failed to load on-chain config:", e);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [publicKey, selectedWallet]);
 
   // Get current account's saved nominees/timeline/distributions (empty if account has none)
   const currentNominees = publicKey ? (stagedNominees[publicKey] || []) : [];
@@ -313,7 +408,10 @@ export default function App() {
     });
     
     try {
-      const result = await stellarService.checkIn(publicKey, selectedWallet || WalletType.FREIGHTER);
+      const wallet = selectedWallet || WalletType.FREIGHTER;
+      const result = await contractService.checkIn(publicKey, (xdr: string) =>
+        stellarService.signXDR(xdr, publicKey, wallet),
+      );
       
       if (result.success && vault) {
         setVault({ ...vault, lastActive: Date.now(), status: VaultStatus.Active });
@@ -363,7 +461,10 @@ export default function App() {
     });
     
     try {
-      const result = await stellarService.checkIn(publicKey, selectedWallet || WalletType.FREIGHTER);
+      const wallet = selectedWallet || WalletType.FREIGHTER;
+      const result = await contractService.checkIn(publicKey, (xdr: string) =>
+        stellarService.signXDR(xdr, publicKey, wallet),
+      );
       
       if (result.success && vault) {
         setVault({ ...vault, lastActive: Date.now(), status: VaultStatus.Active });
@@ -1004,29 +1105,77 @@ export default function App() {
             )}
 
             {/* Nominees & Distribution Section */}
-            <Nominees onSave={(nominees) => {
-              if (publicKey) {
-                setStagedNominees(prev => ({ ...prev, [publicKey]: nominees }));
-                console.log('Nominees saved for', publicKey, ':', nominees);
-                addToast({
-                  status: 'success',
-                  title: 'Nominees Saved',
-                  description: `${nominees.length} nominees configured with distribution roles`
-                });
-              }
-            }} />
+            <Nominees
+              onSave={async (nominees) => {
+                if (!publicKey) return;
+                const wallet = selectedWallet || WalletType.FREIGHTER;
+
+                setStagedNominees((prev) => ({ ...prev, [publicKey]: nominees }));
+                localStorage.setItem(STORAGE_KEYS.nominees(publicKey), JSON.stringify(nominees));
+
+                const onChainNominees = nominees.map((n: any) => ({
+                  address: n.address,
+                  role: String(n.role || "BENF").toUpperCase().slice(0, 4),
+                  bps: Math.round((parseFloat(n.percentage) || 0) * 100),
+                }));
+
+                const res = await contractService.setNominees(
+                  publicKey,
+                  onChainNominees,
+                  (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet),
+                );
+
+                if (res.success) {
+                  addToast({
+                    status: 'success',
+                    title: 'Nominees Saved On-Chain',
+                    description: `${nominees.length} nominees stored in contract`,
+                  });
+                } else {
+                  addToast({
+                    status: 'failed',
+                    message: 'On-chain save failed',
+                    detail: res.error || 'Could not save nominees to contract',
+                  });
+                }
+              }}
+            />
 
             {/* Staged Release Timeline + Configured Schedule */}
             <div className="space-y-8">
               <StagedReleaseTimeline onSave={(stages) => {
                 if (publicKey) {
                   setStagedTimeline(prev => ({ ...prev, [publicKey]: stages }));
+                  localStorage.setItem(STORAGE_KEYS.timeline(publicKey), JSON.stringify(stages));
                   console.log('Timeline saved for', publicKey, ':', stages);
-                  addToast({
-                    status: 'success',
-                    title: 'Timeline Saved',
-                    description: `${stages.length} stages configured`
-                  });
+                  const wallet = selectedWallet || WalletType.FREIGHTER;
+                  contractService
+                    .setTimeline(
+                      publicKey,
+                      stages.map((s: any) => ({
+                        when: Math.floor(new Date(s.date).getTime() / 1000),
+                        amount: String(s.amount || "0"),
+                        memo: (s.description && String(s.description).trim())
+                          ? String(s.description).trim().toUpperCase().slice(0, 4)
+                          : "NONE",
+                      })),
+                      (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet),
+                    )
+                    .then((res) => {
+                      if (res.success) {
+                        addToast({
+                          status: 'success',
+                          title: 'Timeline Saved On-Chain',
+                          description: `${stages.length} stages stored in contract`,
+                        });
+                      } else {
+                        addToast({
+                          status: 'failed',
+                          message: 'On-chain save failed',
+                          detail: res.error || 'Could not save timeline to contract',
+                        });
+                      }
+                    });
                 }
               }} />
 
@@ -1040,14 +1189,46 @@ export default function App() {
                   onSave={(distributions) => {
                     if (publicKey) {
                       setStagedDistributions(prev => ({ ...prev, [publicKey]: distributions }));
+                      localStorage.setItem(STORAGE_KEYS.distributions(publicKey), JSON.stringify(distributions));
                       const minDays = Math.min(...distributions.map((phase: any) => phase.inactivityDays));
                       setVault(prev => prev ? { ...prev, threshold: minDays * 24 * 60 * 60 * 1000 } : prev);
                       console.log('Distributions saved for', publicKey, ':', distributions);
-                      addToast({
-                        status: 'success',
-                        title: 'Distribution Phases Saved',
-                        description: `${distributions.length} phases configured for inactivity-based distribution`
-                      });
+
+                      const wallet = selectedWallet || WalletType.FREIGHTER;
+                      contractService
+                        .setDistributions(
+                          publicKey,
+                          distributions.map((p: any) => ({
+                            inactivity_days: Number(p.inactivityDays),
+                            entries: Object.entries(p.distributions || {})
+                              .filter(([_, pct]) => (parseFloat(String(pct)) || 0) > 0)
+                              .map(([key, pct]) => {
+                                // key might be nominee.id (old) or address (newer). Try resolve.
+                                const nominee = currentNominees.find((n: any) => n.id === key);
+                                const address = nominee?.address || key;
+                                return {
+                                  address,
+                                  bps: Math.round((parseFloat(String(pct)) || 0) * 100),
+                                };
+                              }),
+                          })),
+                          (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet),
+                        )
+                        .then((res) => {
+                          if (res.success) {
+                            addToast({
+                              status: 'success',
+                              title: 'Distribution Saved On-Chain',
+                              description: `${distributions.length} phases stored in contract`,
+                            });
+                          } else {
+                            addToast({
+                              status: 'failed',
+                              message: 'On-chain save failed',
+                              detail: res.error || 'Could not save distributions to contract',
+                            });
+                          }
+                        });
                     }
                   }}
                 />

@@ -57,12 +57,9 @@ Styling: Tailwind CSS
 
 ## Smart Contract Details
 Contract Address:
-<CCDQDKGOQJ3EONDHU7EZEB5CWZI6SMOUCIY7KGCTBA5WPO63XVD4735J>
-Example Contract Call Transaction:
-<cd839fda6666d09019e0d0f288328caecad07cf84041eab1c476fc6c5761fe7f>
+<CBY2L5ADWFW2RPABNLCWDWSM7IHKKJ2XM6H4GT2E5H5KSFXHDBOLY6OP>
 # Verify on Stellar Explorer:
-https://stellar.expert/explorer/testnet/tx/cd839fda6666d09019e0d0f288328caecad07cf84041eab1c476fc6c5761fe7f
-
+https://stellar.expert/explorer/testnet/contract/CBY2L5ADWFW2RPABNLCWDWSM7IHKKJ2XM6H4GT2E5H5KSFXHDBOLY6OP
 ## ⚠️ Error Handling
 
 The application handles:
