@@ -42,6 +42,8 @@ const STORAGE_KEYS = {
   nominees: (pubKey: string) => `continuum:nominees:${pubKey}`,
   timeline: (pubKey: string) => `continuum:timeline:${pubKey}`,
   distributions: (pubKey: string) => `continuum:distributions:${pubKey}`,
+  inactivityDailyNotice: (pubKey: string) => `continuum:inactivity-notice-day:${pubKey}`,
+  inactivityCycleLastActive: (pubKey: string) => `continuum:inactivity-cycle-last-active:${pubKey}`,
 };
 
 function safeJsonParse<T>(value: string | null): T | null {
@@ -51,6 +53,68 @@ function safeJsonParse<T>(value: string | null): T | null {
   } catch {
     return null;
   }
+}
+
+const XLM_TO_STROOPS = 10_000_000;
+
+// UI role ids -> on-chain Symbol strings (stored in contract as `Symbol`)
+const ROLE_ID_TO_SYMBOL: Record<string, string> = {
+  executor: 'EXEC',
+  beneficiary: 'BENF',
+  trustee: 'TRUS',
+  advisor: 'ADVS',
+};
+
+const ROLE_SYMBOL_TO_ID: Record<string, string> = {
+  EXEC: 'executor',
+  BENF: 'beneficiary',
+  TRUS: 'trustee',
+  ADVS: 'advisor',
+};
+
+function roleSymbolToId(symbol: string): string {
+  const s = String(symbol || '').toUpperCase().trim();
+  return ROLE_SYMBOL_TO_ID[s] || ROLE_SYMBOL_TO_ID[s.slice(0, 4)] || 'beneficiary';
+}
+
+function roleIdToSymbol(roleId: string): string {
+  return ROLE_ID_TO_SYMBOL[roleId] || 'BENF';
+}
+
+function stroopsToXlmString(stroops: string): string {
+  try {
+    const v = BigInt(stroops);
+    // toFixed needs number, but the value is just for UI; safe enough after scaling
+    const xlm = Number(v) / XLM_TO_STROOPS;
+    return Number.isFinite(xlm) ? xlm.toFixed(2) : '0.00';
+  } catch {
+    const n = Number(stroops);
+    if (!Number.isFinite(n)) return '0.00';
+    return (n / XLM_TO_STROOPS).toFixed(2);
+  }
+}
+
+function xlmToStroopsString(xlm: string): string {
+  const n = parseFloat(xlm);
+  if (!Number.isFinite(n)) return '0';
+  // Keep integer stroops (contract expects i128)
+  return String(BigInt(Math.round(n * XLM_TO_STROOPS)));
+}
+
+function unixSecondsToDatetimeLocalString(seconds: number): string {
+  const d = new Date(seconds * 1000);
+  const pad = (v: number) => String(v).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const mm = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const min = pad(d.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+}
+
+function getLocalDateKey(now = new Date()): string {
+  const pad = (v: number) => String(v).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
 export interface TransactionRecord {
@@ -125,12 +189,16 @@ export default function App() {
         if (cancelled) return;
 
         if (nominees.length) {
-          const uiNominees = nominees.map((n) => ({
-            id: `${n.address}:${n.role}`,
-            address: n.address,
-            role: n.role,
-            percentage: (n.bps / 100).toFixed(2),
-          }));
+          const uiNominees = nominees.map((n) => {
+            const roleId = roleSymbolToId(n.role);
+            return {
+              id: `${n.address}:${roleId}`,
+              address: n.address,
+              role: roleId,
+              // bps is basis points: 10000 = 100%
+              percentage: (n.bps / 100).toFixed(2),
+            };
+          });
           setStagedNominees((prev) => ({ ...prev, [publicKey]: uiNominees }));
           localStorage.setItem(STORAGE_KEYS.nominees(publicKey), JSON.stringify(uiNominees));
         }
@@ -138,8 +206,10 @@ export default function App() {
         if (timeline.length) {
           const uiTimeline = timeline.map((s) => ({
             id: `t-${s.when}-${s.amount}`,
-            date: s.when * 1000,
-            amount: String(s.amount),
+            // Convert unix seconds -> `datetime-local` compatible string
+            date: unixSecondsToDatetimeLocalString(s.when),
+            // contract stores i128 amount in stroops (integer)
+            amount: stroopsToXlmString(String(s.amount)),
             description: s.memo === "NONE" ? "" : String(s.memo),
           }));
           setStagedTimeline((prev) => ({ ...prev, [publicKey]: uiTimeline }));
@@ -147,12 +217,22 @@ export default function App() {
         }
 
         if (distributions.length) {
+          // Need nominee ids to match the UI editor keys.
+          const addressToNomineeId: Record<string, string> = {};
+          const uiNomineesForMap = nominees.map((n) => {
+            const roleId = roleSymbolToId(n.role);
+            return { address: n.address, id: `${n.address}:${roleId}` };
+          });
+          for (const n of uiNomineesForMap) addressToNomineeId[n.address] = n.id;
+
           const uiDistributions = distributions.map((p) => ({
             id: `p-${p.inactivity_days}`,
             inactivityDays: p.inactivity_days,
             distributions: p.entries.reduce(
               (acc: Record<string, string>, e) => {
-                acc[e.address] = (e.bps / 100).toFixed(2);
+                const nomineeId = addressToNomineeId[e.address];
+                if (!nomineeId) return acc;
+                acc[nomineeId] = (e.bps / 100).toFixed(2);
                 return acc;
               },
               {},
@@ -176,6 +256,26 @@ export default function App() {
   const currentNominees = publicKey ? (stagedNominees[publicKey] || []) : [];
   const currentTimeline = publicKey ? (stagedTimeline[publicKey] || []) : [];
   const currentDistributions = publicKey ? (stagedDistributions[publicKey] || []) : [];
+
+  const nomineesTotalPct = currentNominees.reduce((sum: number, n: any) => {
+    const pct = parseFloat(String(n.percentage)) || 0;
+    return sum + pct;
+  }, 0);
+
+  const isNomineesLocked = currentNominees.length > 0 && Math.abs(nomineesTotalPct - 100) < 0.01;
+
+  const distributionsTotalPct = currentDistributions.reduce((sum: number, phase: any) => {
+    const phaseTotal: number = (Object.values(phase.distributions || {}) as any[]).reduce(
+      (s: number, pct: any) => s + (parseFloat(String(pct)) || 0),
+      0,
+    );
+    return sum + phaseTotal;
+  }, 0);
+
+  const isDistributionsLocked =
+    currentDistributions.length > 0 && Math.abs(distributionsTotalPct - 100) < 0.01;
+
+  const isTimelineLocked = currentTimeline.length > 0;
 
   // Calculate inactivity status based on multi-condition logic
   const configuredInactivityDays = currentDistributions.length
@@ -535,6 +635,85 @@ export default function App() {
   const daysRemaining = vault && inactivityThresholdMs
     ? Math.max(0, Math.floor((inactivityThresholdMs - (Date.now() - vault.lastActive)) / (1000 * 60 * 60 * 24)))
     : null;
+
+  // Automatic inactivity reminders:
+  // - start when <= 5 days remaining
+  // - send once per day
+  // - reset reminder cycle after successful check-in (lastActive changes)
+  useEffect(() => {
+    if (!publicKey || daysRemaining === null || !vault) return;
+
+    const cycleKey = STORAGE_KEYS.inactivityCycleLastActive(publicKey);
+    const dailyKey = STORAGE_KEYS.inactivityDailyNotice(publicKey);
+    const lastActive = Number(vault.lastActive || 0);
+    const storedCycleActive = Number(localStorage.getItem(cycleKey) || 0);
+
+    // Any new activity/check-in starts a fresh reminder cycle.
+    if (lastActive > storedCycleActive) {
+      localStorage.setItem(cycleKey, String(lastActive));
+      localStorage.removeItem(dailyKey);
+    }
+
+    // Notify only in the warning window.
+    if (daysRemaining > 5 || daysRemaining < 0) return;
+
+    const todayKey = getLocalDateKey();
+    const lastNotifiedDay = localStorage.getItem(dailyKey);
+    if (lastNotifiedDay === todayKey) return;
+
+    addToast({
+      status: 'pending',
+      message: 'Inactivity Reminder',
+      detail:
+        daysRemaining === 0
+          ? 'Your inactivity timer has reached 0 days. Check in now.'
+          : `Only ${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining. Check in to reset your timer.`,
+      autoHideDelay: 8000,
+    });
+
+    // Best-effort browser notification (if allowed).
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      const showBrowserNotification = () => {
+        try {
+          new Notification('Continuum Inactivity Reminder', {
+            body:
+              daysRemaining === 0
+                ? 'Your inactivity timer has reached 0 days. Open Continuum and check in.'
+                : `You have ${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining. Check in to stay active.`,
+          });
+        } catch (err) {
+          console.warn('[Reminder] Browser notification failed:', err);
+        }
+      };
+
+      if (Notification.permission === 'granted') {
+        showBrowserNotification();
+      } else if (Notification.permission === 'default') {
+        Notification.requestPermission()
+          .then((permission) => {
+            if (permission === 'granted') showBrowserNotification();
+          })
+          .catch(() => {});
+      }
+    }
+
+    // Best-effort backend ping (currently mock endpoint).
+    fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: publicKey, // placeholder identifier until user email profile exists
+        type: 'inactivity_warning',
+        message:
+          daysRemaining === 0
+            ? 'Inactivity timer reached 0 days. Check in immediately.'
+            : `${daysRemaining} day(s) remaining in inactivity timer.`,
+      }),
+    }).catch(() => {});
+
+    localStorage.setItem(dailyKey, todayKey);
+  }, [publicKey, vault, daysRemaining, addToast]);
+
   const fadeUp = {
     hidden: { opacity: 0, y: 24 },
     show: { opacity: 1, y: 0 }
@@ -1106,6 +1285,8 @@ export default function App() {
 
             {/* Nominees & Distribution Section */}
             <Nominees
+              initialNominees={currentNominees}
+              locked={isNomineesLocked}
               onSave={async (nominees) => {
                 if (!publicKey) return;
                 const wallet = selectedWallet || WalletType.FREIGHTER;
@@ -1115,7 +1296,7 @@ export default function App() {
 
                 const onChainNominees = nominees.map((n: any) => ({
                   address: n.address,
-                  role: String(n.role || "BENF").toUpperCase().slice(0, 4),
+                  role: roleIdToSymbol(String(n.role || "beneficiary")),
                   bps: Math.round((parseFloat(n.percentage) || 0) * 100),
                 }));
 
@@ -1143,7 +1324,10 @@ export default function App() {
 
             {/* Staged Release Timeline + Configured Schedule */}
             <div className="space-y-8">
-              <StagedReleaseTimeline onSave={(stages) => {
+              <StagedReleaseTimeline
+                initialStages={currentTimeline}
+                locked={isTimelineLocked}
+                onSave={(stages) => {
                 if (publicKey) {
                   setStagedTimeline(prev => ({ ...prev, [publicKey]: stages }));
                   localStorage.setItem(STORAGE_KEYS.timeline(publicKey), JSON.stringify(stages));
@@ -1154,9 +1338,14 @@ export default function App() {
                       publicKey,
                       stages.map((s: any) => ({
                         when: Math.floor(new Date(s.date).getTime() / 1000),
-                        amount: String(s.amount || "0"),
-                        memo: (s.description && String(s.description).trim())
-                          ? String(s.description).trim().toUpperCase().slice(0, 4)
+                        // Contract stores `amount` as integer stroops.
+                        amount: xlmToStroopsString(String(s.amount || "0")),
+                        memo: s.description && String(s.description).trim()
+                          ? String(s.description)
+                              .trim()
+                              .toUpperCase()
+                              .replace(/[^A-Z0-9_]/g, '')
+                              .slice(0, 12)
                           : "NONE",
                       })),
                       (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet),
@@ -1186,6 +1375,8 @@ export default function App() {
               <div className="space-y-3">
                 <InactivityDistribution 
                   nominees={currentNominees}
+                  initialPhases={currentDistributions}
+                  locked={isDistributionsLocked}
                   onSave={(distributions) => {
                     if (publicKey) {
                       setStagedDistributions(prev => ({ ...prev, [publicKey]: distributions }));
@@ -1201,16 +1392,19 @@ export default function App() {
                           distributions.map((p: any) => ({
                             inactivity_days: Number(p.inactivityDays),
                             entries: Object.entries(p.distributions || {})
-                              .filter(([_, pct]) => (parseFloat(String(pct)) || 0) > 0)
-                              .map(([key, pct]) => {
-                                // key might be nominee.id (old) or address (newer). Try resolve.
-                                const nominee = currentNominees.find((n: any) => n.id === key);
-                                const address = nominee?.address || key;
+                              .map(([nomineeId, pct]) => {
+                                const nominee = currentNominees.find((n: any) => n.id === nomineeId);
+                                if (!nominee) return null;
+
+                                const bps = Math.round((parseFloat(String(pct)) || 0) * 100);
+                                if (bps <= 0) return null;
+
                                 return {
-                                  address,
-                                  bps: Math.round((parseFloat(String(pct)) || 0) * 100),
+                                  address: nominee.address,
+                                  bps,
                                 };
-                              }),
+                              })
+                              .filter(Boolean),
                           })),
                           (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet),
                         )

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Clock, Plus, Trash2, AlertCircle, CheckCircle2 } from 'lucide-react';
 
@@ -11,15 +11,30 @@ interface ReleaseStage {
 
 interface StagedReleaseTimelineProps {
   onSave: (stages: ReleaseStage[]) => void;
+  initialStages?: ReleaseStage[];
+  locked?: boolean;
 }
 
-export default function StagedReleaseTimeline({ onSave }: StagedReleaseTimelineProps) {
-  const [stages, setStages] = useState<ReleaseStage[]>([]);
+export default function StagedReleaseTimeline({
+  onSave,
+  initialStages,
+  locked = false,
+}: StagedReleaseTimelineProps) {
+  const [stages, setStages] = useState<ReleaseStage[]>(initialStages || []);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // Sync editor when chain config loads
+  useEffect(() => {
+    setStages(initialStages || []);
+    setError(null);
+    setSuccessMessage(null);
+    setShowForm(false);
+  }, [initialStages]);
+
   const handleAddStage = () => {
+    if (locked) return;
     const newStage: ReleaseStage = {
       id: Date.now().toString(),
       date: '',
@@ -37,6 +52,7 @@ export default function StagedReleaseTimeline({ onSave }: StagedReleaseTimelineP
   };
 
   const handleRemoveStage = (id: string) => {
+    if (locked) return;
     setStages(stages.filter(s => s.id !== id));
   };
 
@@ -125,6 +141,7 @@ export default function StagedReleaseTimeline({ onSave }: StagedReleaseTimelineP
                 <button
                   onClick={() => handleRemoveStage(stage.id)}
                   className="p-1 hover:bg-red-500/20 text-red-400 rounded transition-colors"
+                    style={{ display: locked ? 'none' : undefined }}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -173,6 +190,7 @@ export default function StagedReleaseTimeline({ onSave }: StagedReleaseTimelineP
         <button
           onClick={handleAddStage}
           className="flex-1 px-4 py-2 bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 rounded-lg text-purple-400 transition-colors flex items-center justify-center gap-2"
+          style={{ display: locked ? 'none' : undefined }}
         >
           <Plus className="w-4 h-4" />
           Add Stage
@@ -182,7 +200,7 @@ export default function StagedReleaseTimeline({ onSave }: StagedReleaseTimelineP
           disabled={stages.length === 0}
           className="flex-1 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-semibold transition-colors disabled:opacity-50"
         >
-          Save Timeline
+          {locked ? 'Update Timeline' : 'Save Timeline'}
         </button>
       </div>
     </div>

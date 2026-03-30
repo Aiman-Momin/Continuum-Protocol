@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Users, Plus, Trash2, AlertCircle, CheckCircle2 } from 'lucide-react';
 
@@ -11,12 +11,21 @@ interface Nominee {
 
 interface NomineesProps {
   onSave: (nominees: Nominee[]) => void;
+  initialNominees?: Nominee[];
+  locked?: boolean;
 }
 
-export default function Nominees({ onSave }: NomineesProps) {
-  const [nominees, setNominees] = useState<Nominee[]>([]);
+export default function Nominees({ onSave, initialNominees, locked = false }: NomineesProps) {
+  const [nominees, setNominees] = useState<Nominee[]>(initialNominees || []);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Sync internal editor when chain config loads.
+  useEffect(() => {
+    setNominees(initialNominees || []);
+    setError(null);
+    setSuccessMessage(null);
+  }, [initialNominees]);
 
   const roles = [
     { id: 'executor', label: 'Executor', description: 'Manages asset distribution' },
@@ -26,6 +35,7 @@ export default function Nominees({ onSave }: NomineesProps) {
   ];
 
   const handleAddNominee = () => {
+    if (locked) return;
     if (getTotalPercentage() >= 100) {
       setError('Total distribution is already 100%. Reduce an existing nominee percentage before adding another nominee.');
       return;
@@ -46,6 +56,7 @@ export default function Nominees({ onSave }: NomineesProps) {
   };
 
   const handleRemoveNominee = (id: string) => {
+    if (locked) return;
     setNominees(nominees.filter(n => n.id !== id));
   };
 
@@ -62,6 +73,7 @@ export default function Nominees({ onSave }: NomineesProps) {
   };
 
   const handleSave = () => {
+    // When locked, "Save" becomes an update of existing config only.
     setError(null);
 
     if (nominees.length === 0) {
@@ -169,6 +181,7 @@ export default function Nominees({ onSave }: NomineesProps) {
                   <button
                     onClick={() => handleRemoveNominee(nominee.id)}
                     className="p-1 hover:bg-red-500/20 text-red-400 rounded transition-colors"
+                    style={{ display: locked ? 'none' : undefined }}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -233,6 +246,7 @@ export default function Nominees({ onSave }: NomineesProps) {
         <button
           onClick={handleAddNominee}
           className="flex-1 px-4 py-2 bg-blue-500/15 border border-blue-500/30 hover:bg-blue-500/25 rounded-lg text-blue-400 transition-colors flex items-center justify-center gap-2"
+          style={{ display: locked ? 'none' : undefined }}
         >
           <Plus className="w-4 h-4" />
           Add Nominee
@@ -242,7 +256,7 @@ export default function Nominees({ onSave }: NomineesProps) {
           disabled={nominees.length === 0}
           className="flex-1 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-semibold transition-colors disabled:opacity-50"
         >
-          Save Nominees
+          {locked ? 'Update Nominees' : 'Save Nominees'}
         </button>
       </div>
     </div>

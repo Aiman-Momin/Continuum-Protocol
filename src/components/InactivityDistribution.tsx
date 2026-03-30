@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Clock, Plus, Trash2, AlertCircle, CheckCircle2 } from 'lucide-react';
 
@@ -18,12 +18,26 @@ interface DistributionPhase {
 interface InactivityDistributionProps {
   nominees: Nominee[];
   onSave: (phases: DistributionPhase[]) => void;
+  initialPhases?: DistributionPhase[];
+  locked?: boolean;
 }
 
-export default function InactivityDistribution({ nominees, onSave }: InactivityDistributionProps) {
-  const [phases, setPhases] = useState<DistributionPhase[]>([]);
+export default function InactivityDistribution({
+  nominees,
+  onSave,
+  initialPhases,
+  locked = false,
+}: InactivityDistributionProps) {
+  const [phases, setPhases] = useState<DistributionPhase[]>(initialPhases || []);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Sync editor when chain config loads
+  useEffect(() => {
+    setPhases(initialPhases || []);
+    setError(null);
+    setSuccessMessage(null);
+  }, [initialPhases]);
 
   if (nominees.length === 0) {
     return (
@@ -47,6 +61,7 @@ export default function InactivityDistribution({ nominees, onSave }: InactivityD
   }
 
   const handleAddPhase = () => {
+    if (locked) return;
     const newPhase: DistributionPhase = {
       id: Date.now().toString(),
       inactivityDays: 90,
@@ -81,6 +96,7 @@ export default function InactivityDistribution({ nominees, onSave }: InactivityD
   };
 
   const handleRemovePhase = (id: string) => {
+    if (locked) return;
     setPhases(phases.filter(p => p.id !== id));
   };
 
@@ -207,6 +223,7 @@ export default function InactivityDistribution({ nominees, onSave }: InactivityD
                   <button
                     onClick={() => handleRemovePhase(phase.id)}
                     className="p-1 hover:bg-red-500/20 text-red-400 rounded transition-colors"
+                    style={{ display: locked ? 'none' : undefined }}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -256,6 +273,7 @@ export default function InactivityDistribution({ nominees, onSave }: InactivityD
         <button
           onClick={handleAddPhase}
           className="flex-1 px-4 py-2 bg-slate-500/15 border border-slate-500/30 hover:bg-slate-500/25 rounded-lg text-slate-400 transition-colors flex items-center justify-center gap-2"
+          style={{ display: locked ? 'none' : undefined }}
         >
           <Plus className="w-4 h-4" />
           Add Phase
@@ -265,7 +283,7 @@ export default function InactivityDistribution({ nominees, onSave }: InactivityD
           disabled={phases.length === 0}
           className="flex-1 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-semibold transition-colors disabled:opacity-50"
         >
-          Save Distributions
+          {locked ? 'Update Distributions' : 'Save Distributions'}
         </button>
       </div>
     </div>
