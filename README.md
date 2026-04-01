@@ -82,6 +82,10 @@ Proof-of-Life actions are recorded on-chain
 ## Live Demo
 https://continuum-protocol.vercel.app/
 
+## User Feedback
+We welcome user feedback to improve Continuum Protocol. Please share your suggestions, bug reports, and ideas in the feedback spreadsheet:
+https://docs.google.com/spreadsheets/d/1dbLuI4kDCnknZMT8IS3V5JFsbGw-x20YjIDZpTOPTjg/edit?usp=drive_link
+
 ## Run Locally
 Prerequisites
 Node.js

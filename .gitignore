@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Soroban/Rust build artifacts
+soroban/contract/target/
