@@ -68,7 +68,8 @@ export function getLastContractInteraction(history: TransactionRecord[]): number
  */
 export function calculateInactivityStatus(
   history: TransactionRecord[],
-  threshold: number = 1000 * 60 * 60 * 24 * 90 // 90 days default
+  threshold: number = 1000 * 60 * 60 * 24 * 90, // 90 days default
+  lastActiveOverride?: number,
 ): InactivityStatus {
   const now = Date.now();
 
@@ -76,18 +77,21 @@ export function calculateInactivityStatus(
   const lastCheckIn = getLastCheckIn(history);
   const lastTransaction = getLastTransaction(history);
   const lastContractInteraction = getLastContractInteraction(history);
+  const lastActive = lastActiveOverride || 0;
 
   // Determine if each condition is met (activity detected within threshold)
   const hasCheckIn = lastCheckIn !== null && (now - lastCheckIn) < threshold;
   const hasTransaction = lastTransaction !== null && (now - lastTransaction) < threshold;
   const hasContractInteraction =
-    lastContractInteraction !== null && (now - lastContractInteraction) < threshold;
+    (lastContractInteraction !== null && (now - lastContractInteraction) < threshold) ||
+    (lastActive > 0 && (now - lastActive) < threshold);
 
   // Time threshold exceeded if no activity at all
   const latestActivity = Math.max(
     lastCheckIn || 0,
     lastTransaction || 0,
-    lastContractInteraction || 0
+    lastContractInteraction || 0,
+    lastActive,
   );
   const timeThresholdExceeded = latestActivity === 0 || now - latestActivity >= threshold;
 
@@ -124,15 +128,21 @@ export function calculateInactivityStatus(
  * Format time remaining for display
  */
 export function formatTimeRemaining(ms: number): string {
-  if (ms <= 0) return '0 days';
+  if (ms <= 0) return '0s';
 
-  const days = Math.floor(ms / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((ms % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const seconds = Math.floor(ms / 1000);
+  const days = Math.floor(seconds / (60 * 60 * 24));
+  const hours = Math.floor((seconds % (60 * 60 * 24)) / (60 * 60));
+  const minutes = Math.floor((seconds % (60 * 60)) / 60);
+  const remainingSeconds = seconds % 60;
 
-  if (days > 0) {
-    return `${days}d ${hours}h`;
-  }
-  return `${hours}h`;
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  parts.push(`${remainingSeconds}s`);
+
+  return parts.join(' ');
 }
 
 /**

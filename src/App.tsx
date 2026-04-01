@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Shield, 
   Clock, 
@@ -42,6 +42,7 @@ const STORAGE_KEYS = {
   nominees: (pubKey: string) => `continuum:nominees:${pubKey}`,
   timeline: (pubKey: string) => `continuum:timeline:${pubKey}`,
   distributions: (pubKey: string) => `continuum:distributions:${pubKey}`,
+  history: (pubKey: string) => `continuum:history:${pubKey}`,
   inactivityDailyNotice: (pubKey: string) => `continuum:inactivity-notice-day:${pubKey}`,
   inactivityCycleLastActive: (pubKey: string) => `continuum:inactivity-cycle-last-active:${pubKey}`,
 };
@@ -148,6 +149,13 @@ export default function App() {
   const [txStatus, setTxStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
   const [txHash, setTxHash] = useState<string | null>(null);
   const [txError, setTxError] = useState<string | null>(null);
+
+  // Vault Deposit State (required for auto-distribution)
+  const [depositXlm, setDepositXlm] = useState('');
+  const [isDepositing, setIsDepositing] = useState(false);
+  const [isExecutingDistribution, setIsExecutingDistribution] = useState(false);
+  const [vaultBalanceStroops, setVaultBalanceStroops] = useState<string>('0');
+  const autoDistributionTriggeredRef = useRef(false);
   
   // Toast Notifications
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -157,17 +165,37 @@ export default function App() {
   const [stagedTimeline, setStagedTimeline] = useState<Record<string, any[]>>({});
   const [stagedDistributions, setStagedDistributions] = useState<Record<string, any[]>>({});
 
-  // Load staged config from durable storage whenever account changes
+  // Load staged config and activity history from durable storage whenever account changes
   useEffect(() => {
     if (!publicKey) return;
 
     const savedNominees = safeJsonParse<any[]>(localStorage.getItem(STORAGE_KEYS.nominees(publicKey)));
     const savedTimeline = safeJsonParse<any[]>(localStorage.getItem(STORAGE_KEYS.timeline(publicKey)));
     const savedDistributions = safeJsonParse<any[]>(localStorage.getItem(STORAGE_KEYS.distributions(publicKey)));
+    const savedHistory = safeJsonParse<TransactionRecord[]>(localStorage.getItem(STORAGE_KEYS.history(publicKey)));
 
     if (savedNominees) setStagedNominees(prev => ({ ...prev, [publicKey]: savedNominees }));
     if (savedTimeline) setStagedTimeline(prev => ({ ...prev, [publicKey]: savedTimeline }));
     if (savedDistributions) setStagedDistributions(prev => ({ ...prev, [publicKey]: savedDistributions }));
+    if (savedHistory) setHistory(savedHistory);
+  }, [publicKey]);
+
+  // Poll contract vault balance
+  useEffect(() => {
+    if (!publicKey) return;
+    let cancelled = false;
+
+    const load = async () => {
+      const bal = await contractService.getVaultBalance(publicKey);
+      if (!cancelled) setVaultBalanceStroops(bal);
+    };
+
+    load();
+    const t = setInterval(load, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
   }, [publicKey]);
 
   // Load config from chain on login (and cache locally)
@@ -285,8 +313,19 @@ export default function App() {
     ? configuredInactivityDays * 24 * 60 * 60 * 1000
     : null;
   const inactivityStatus = vault && inactivityThresholdMs
-    ? calculateInactivityStatus(history, inactivityThresholdMs)
+    ? calculateInactivityStatus(history, inactivityThresholdMs, vault.lastActive)
     : null;
+
+  const elapsedChainDays = vault && vault.lastActive
+    ? Math.floor((Date.now() - vault.lastActive) / (1000 * 60 * 60 * 24))
+    : null;
+  const distributionPhaseCandidates = currentDistributions
+    .filter((phase: any) => phase.inactivityDays !== null && phase.inactivityDays !== undefined);
+  const hasEligibleDistributionPhase = elapsedChainDays !== null
+    ? distributionPhaseCandidates.some((phase: any) => elapsedChainDays >= Number(phase.inactivityDays))
+    : false;
+  const hasDistributionConfig = currentDistributions.length > 0;
+  const distributionReady = Boolean(vault && vault.lastActive && hasDistributionConfig && hasEligibleDistributionPhase);
 
   // Toast Management
   const addToast = useCallback((toast: Omit<Toast, 'id'> & { id?: string }) => {
@@ -344,12 +383,6 @@ export default function App() {
         setPublicKey(address);
         setSelectedWallet(type);
         await refreshAccountData(address);
-        
-        // Mock initial history
-        setHistory([
-          { id: '1', type: 'CHECK_IN', status: 'SUCCESS', timestamp: Date.now() - 3600000 },
-          { id: '2', type: 'DEPOSIT', amount: '100', status: 'SUCCESS', timestamp: Date.now() - 86400000 },
-        ]);
       }
     } catch (err: any) {
       setError(err.message || "Connection rejected or failed. Please try again.");
@@ -361,12 +394,13 @@ export default function App() {
 
   const refreshAccountData = async (address: string) => {
     const bal = await stellarService.getAccountBalance(address);
+    const lastActive = await contractService.getLastActive(address);
     setBalance(bal);
     setVault({
       owner: address,
-      lastActive: Date.now(),
+      lastActive: lastActive || 0,
       threshold: 1000 * 60 * 60 * 24 * 90,
-      status: VaultStatus.Active,
+      status: lastActive && lastActive > 0 ? VaultStatus.Active : VaultStatus.InactivityDetected,
       beneficiaries: [
         { address: "GB...9Y2", percentage: 50, name: "Legacy Trust" }
       ],
@@ -398,6 +432,86 @@ export default function App() {
     setVault(null);
     setHistory([]);
     setError(null);
+    setDepositXlm('');
+    setVaultBalanceStroops('0');
+  };
+
+  // Persist history changes across refreshes for the active wallet
+  useEffect(() => {
+    if (!publicKey) return;
+    localStorage.setItem(STORAGE_KEYS.history(publicKey), JSON.stringify(history));
+  }, [publicKey, history]);
+
+  const handleDeposit = async () => {
+    if (!publicKey) return;
+    const amountNum = parseFloat(depositXlm);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      addToast({
+        status: 'failed',
+        message: 'Invalid deposit amount',
+        detail: 'Enter a positive XLM amount',
+      });
+      return;
+    }
+
+    const wallet = selectedWallet || WalletType.FREIGHTER;
+    setIsDepositing(true);
+    try {
+      const res = await contractService.deposit(
+        publicKey,
+        xlmToStroopsString(depositXlm),
+        (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet),
+      );
+
+      if (res.success) {
+        addToast({
+          status: 'success',
+          message: 'Deposit submitted',
+          detail: `${depositXlm} XLM deposited into contract vault`,
+          hash: res.hash,
+        });
+        setDepositXlm('');
+        const bal = await contractService.getVaultBalance(publicKey);
+        setVaultBalanceStroops(bal);
+
+        const lastActive = await contractService.getLastActive(publicKey);
+        if (lastActive && lastActive > 0) {
+          setVault(prev => prev ? { ...prev, lastActive, status: VaultStatus.Active } : prev);
+        } else {
+          const sign = (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet);
+          const checkInRes = await contractService.checkIn(publicKey, sign);
+          if (checkInRes.success) {
+            setVault(prev => prev ? { ...prev, lastActive: Date.now(), status: VaultStatus.Active } : prev);
+            addToast({
+              status: 'success',
+              message: 'Activity Recorded',
+              detail: 'Proof-of-life recorded after deposit',
+              hash: checkInRes.hash,
+            });
+          } else {
+            addToast({
+              status: 'warning',
+              message: 'Activity Not Recorded',
+              detail: 'Deposit succeeded but no on-chain activity was detected. Please click Check In once.',
+            });
+          }
+        }
+      } else {
+        addToast({
+          status: 'failed',
+          message: 'Deposit failed',
+          detail: res.error || 'Could not deposit into vault',
+        });
+      }
+    } catch (e: any) {
+      addToast({
+        status: 'failed',
+        message: 'Deposit error',
+        detail: e?.message || 'Unexpected error',
+      });
+    } finally {
+      setIsDepositing(false);
+    }
   };
 
   const handleSendXLM = async (e: React.FormEvent) => {
@@ -617,6 +731,116 @@ export default function App() {
       setIsCheckingIn(false);
     }
   };
+
+  const handleExecuteDistribution = useCallback(async () => {
+    if (!publicKey) return;
+    const lastActive = await contractService.getLastActive(publicKey);
+    if (!lastActive || lastActive === 0) {
+      addToast({
+        status: 'failed',
+        message: 'Distribution Not Available',
+        detail: 'No on-chain activity has been recorded yet. Please perform a proof-of-life or deposit first.',
+      });
+      return;
+    }
+
+    if (vault?.lastActive !== lastActive) {
+      setVault((prev) => prev ? { ...prev, lastActive } : prev);
+    }
+
+    if (currentDistributions.length === 0) {
+      addToast({
+        status: 'failed',
+        message: 'Distribution Not Available',
+        detail: 'No distribution phases are configured on-chain yet.',
+      });
+      return;
+    }
+
+    const elapsedDaysSinceActive = lastActive
+      ? Math.floor((Date.now() - lastActive) / (1000 * 60 * 60 * 24))
+      : 0;
+    const hasPhaseReady = currentDistributions.some((phase: any) =>
+      Number(phase.inactivityDays) <= elapsedDaysSinceActive,
+    );
+    if (!hasPhaseReady) {
+      addToast({
+        status: 'failed',
+        message: 'Distribution Not Ready',
+        detail: `Owner inactivity is ${elapsedDaysSinceActive} day(s); no phase is ready yet.`,
+      });
+      return;
+    }
+
+    setIsExecutingDistribution(true);
+    const toastId = addToast({
+      id: `dist-${Date.now()}`,
+      status: 'pending',
+      message: 'Executing Inactivity Distribution',
+      detail: 'Submitting contract distribution transaction...',
+    });
+
+    try {
+      const wallet = selectedWallet || WalletType.FREIGHTER;
+      const result = await contractService.executeDistribution(publicKey, (xdr: string) =>
+        stellarService.signXDR(xdr, publicKey, wallet),
+      );
+
+      if (result.success) {
+        updateToast(toastId, {
+          status: 'success',
+          message: 'Distribution Executed',
+          detail: 'Funds have been distributed according to your phases',
+          hash: result.hash,
+        });
+
+        setHistory(prev => [{
+          id: Math.random().toString(36).substr(2, 9),
+          type: 'TRANSFER',
+          amount: 'AUTO-DISTRIBUTION',
+          status: 'SUCCESS',
+          timestamp: Date.now(),
+          hash: result.hash,
+        }, ...prev]);
+      } else {
+        updateToast(toastId, {
+          status: 'failed',
+          message: 'Distribution Failed',
+          detail: result.error || 'No eligible distribution was executed',
+        });
+      }
+    } catch (e: any) {
+      console.error('Distribution execution failed:', e);
+      updateToast(toastId, {
+        status: 'failed',
+        message: 'Distribution Error',
+        detail: e.message || 'An unexpected error occurred',
+      });
+    } finally {
+      setIsExecutingDistribution(false);
+    }
+  }, [publicKey, selectedWallet, addToast, currentDistributions, vault]);
+
+  useEffect(() => {
+    if (!publicKey) {
+      autoDistributionTriggeredRef.current = false;
+      return;
+    }
+
+    if (!inactivityStatus?.isInactive) {
+      autoDistributionTriggeredRef.current = false;
+      return;
+    }
+
+    if (!vault || vault.lastActive === 0) {
+      autoDistributionTriggeredRef.current = false;
+      return;
+    }
+
+    if (autoDistributionTriggeredRef.current) return;
+    autoDistributionTriggeredRef.current = true;
+    handleExecuteDistribution();
+  }, [publicKey, inactivityStatus?.isInactive, handleExecuteDistribution, vault]);
 
   const handleRefreshBalance = async () => {
     if (!publicKey) return;
@@ -1280,7 +1504,21 @@ export default function App() {
 
             {/* Inactivity Status Section */}
             {inactivityStatus && inactivityThresholdMs && (
-              <InactivityStatus status={inactivityStatus} threshold={inactivityThresholdMs} />
+              <>
+                <InactivityStatus status={inactivityStatus} threshold={inactivityThresholdMs} />
+                {inactivityStatus.isInactive && publicKey && (
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      onClick={handleExecuteDistribution}
+                      disabled={isExecutingDistribution}
+                      className="px-6 py-3 btn-primary flex items-center gap-2"
+                    >
+                      {isExecutingDistribution ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ArrowRightLeft className="w-5 h-5" />}
+                      {isExecutingDistribution ? 'Executing Distribution' : 'Execute Distribution'}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
 
             {/* Nominees & Distribution Section */}
@@ -1464,6 +1702,35 @@ export default function App() {
                     {selectedWallet === WalletType.METAMASK ? 'MetaMask Stellar Snap' : 'Stellar Network Node'}
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div className="glass-card p-8">
+              <div className="micro-label mb-4">Vault Deposit</div>
+              <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
+                Auto-distribution only works for funds deposited into the contract vault.
+              </p>
+              <div className="flex items-center justify-between text-xs mb-4">
+                <span className="text-zinc-500">Vault Balance</span>
+                <span className="text-zinc-300 font-mono">{stroopsToXlmString(vaultBalanceStroops)} XLM</span>
+              </div>
+              <div className="flex gap-3">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={depositXlm}
+                  onChange={(e) => setDepositXlm(e.target.value)}
+                  placeholder="Amount (XLM)"
+                  className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500/50"
+                />
+                <button
+                  onClick={handleDeposit}
+                  disabled={isDepositing || !depositXlm.trim()}
+                  className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold transition-colors disabled:opacity-50"
+                >
+                  {isDepositing ? 'Depositing...' : 'Deposit'}
+                </button>
               </div>
             </div>
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock, Activity } from 'lucide-react';
 import { InactivityStatus as InactivityStatusType } from '../services/inactivityService';
 import { getActivityStatusDisplay, formatTimeRemaining } from '../services/inactivityService';
@@ -10,8 +10,23 @@ interface InactivityStatusProps {
 
 export default function InactivityStatus({ status, threshold }: InactivityStatusProps) {
   const display = getActivityStatusDisplay(status);
+  const [displayTimeRemaining, setDisplayTimeRemaining] = useState(status.timeRemaining);
   const hasThreshold = typeof threshold === 'number' && threshold > 0;
   const thresholdDays = hasThreshold ? Math.floor(threshold / (1000 * 60 * 60 * 24)) : 0;
+
+  useEffect(() => {
+    setDisplayTimeRemaining(status.timeRemaining);
+  }, [status.timeRemaining]);
+
+  useEffect(() => {
+    if (!hasThreshold || status.timeRemaining <= 0) return;
+
+    const interval = window.setInterval(() => {
+      setDisplayTimeRemaining(prev => Math.max(0, prev - 1000));
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [hasThreshold, status.timeRemaining]);
 
   return (
     <div className={`glass-card p-8 border ${display.color}`}>
@@ -90,9 +105,9 @@ export default function InactivityStatus({ status, threshold }: InactivityStatus
           <div className="flex items-center justify-between">
             <div className="text-zinc-400">Time Remaining</div>
             <div className={`font-semibold ${
-              status.timeRemaining < threshold! / 4 ? 'text-orange-400' : 'text-emerald-400'
+              displayTimeRemaining < threshold! / 4 ? 'text-orange-400' : 'text-emerald-400'
             }`}>
-              {formatTimeRemaining(status.timeRemaining)}
+              {formatTimeRemaining(displayTimeRemaining)}
             </div>
           </div>
         )}

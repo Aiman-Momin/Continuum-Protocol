@@ -309,7 +309,7 @@ export const stellarService = {
       const account = await server.loadAccount(publicKey);
       
       
-      const CONTRACT_ID = "CBY2L5ADWFW2RPABNLCWDWSM7IHKKJ2XM6H4GT2E5H5KSFXHDBOLY6OP";
+      const CONTRACT_ID = "CBLO64RZZQOY5BA26IZVFON64KSVYABMNF3TWB6AB2XWB5TYCDTKQCC4";
 
    
       const transaction = new TransactionBuilder(account, {

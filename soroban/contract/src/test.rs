@@ -1,6 +1,9 @@
 #![cfg(test)]
 use super::*;
+use soroban_sdk::testutils::Address as _;
 use soroban_sdk::Env;
+use soroban_sdk::testutils::Ledger;
+use soroban_sdk::testutils::LedgerInfo;
 
 #[test]
 fn test_storage() {
@@ -27,7 +30,17 @@ fn test_owner_scoped_nominees_and_activity() {
     let client = SimpleStorageClient::new(&env, &contract_id);
 
     let owner = soroban_sdk::Address::generate(&env);
-    owner.require_auth(); // enables auth in testutils
+    env.mock_all_auths();
+    env.ledger().set(LedgerInfo {
+        timestamp: 1,
+        protocol_version: 22,
+        sequence_number: 1,
+        network_id: Default::default(),
+        base_reserve: 0,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 1_000_000,
+    });
 
     // Empty by default
     assert_eq!(client.get_nominees(&owner).len(), 0);

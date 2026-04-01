@@ -1,1 +1,0 @@
-C:\Users\hp\Downloads\Continuum-Protocol-main\Continuum-Protocol-main\soroban\contract\target\wasm32v1-none\release\soroban_simple_storage.wasm: C:\Users\hp\Downloads\Continuum-Protocol-main\Continuum-Protocol-main\soroban\contract\src\lib.rs C:\Users\hp\Downloads\Continuum-Protocol-main\Continuum-Protocol-main\soroban\contract\src\test.rs

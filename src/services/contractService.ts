@@ -10,10 +10,12 @@ const {
   nativeToScVal,
 } = StellarSdk;
 
+export const NATIVE_TOKEN_CONTRACT_ID = StellarSdk.Asset.native().contractId(Networks.TESTNET);
+
 const server = new Horizon.Server("https://horizon-testnet.stellar.org");
 const sorobanServer = new SorobanRpc.Server("https://soroban-testnet.stellar.org");
 
-export const CONTRACT_ID = "CBY2L5ADWFW2RPABNLCWDWSM7IHKKJ2XM6H4GT2E5H5KSFXHDBOLY6OP";
+export const CONTRACT_ID = "CBLO64RZZQOY5BA26IZVFON64KSVYABMNF3TWB6AB2XWB5TYCDTKQCC4";
 
 export type NomineeOnChain = {
   address: string; // Stellar address (G...)
@@ -35,6 +37,112 @@ export type DistributionPhaseOnChain = {
 function requireOwner(userAddress: string) {
   if (!userAddress) throw new Error("Missing user address");
   return new Address(userAddress);
+}
+
+export async function init(
+  userAddress: string,
+  tokenContractId: string,
+  signTransaction: (xdr: string) => Promise<string>,
+): Promise<{ success: boolean; hash?: string; error?: string }> {
+  try {
+    const contract = new Contract(CONTRACT_ID);
+    const account = await server.loadAccount(userAddress);
+    const tx = new TransactionBuilder(account, {
+      fee: "1000",
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(contract.call("init", new Address(tokenContractId).toScVal()))
+      .setTimeout(60)
+      .build();
+
+    const preparedTx = await sorobanServer.prepareTransaction(tx);
+    const signedXdr = await signTransaction(preparedTx.toXDR());
+    const signedTx = TransactionBuilder.fromXDR(signedXdr, Networks.TESTNET);
+    const result = await server.submitTransaction(signedTx);
+    return { success: true, hash: (result as any).hash };
+  } catch (e: any) {
+    console.error("[contractService] init failed:", e);
+    return { success: false, error: e.message || "init failed" };
+  }
+}
+
+export async function deposit(
+  userAddress: string,
+  amount: string,
+  signTransaction: (xdr: string) => Promise<string>,
+): Promise<{ success: boolean; hash?: string; error?: string }> {
+  try {
+    const contract = new Contract(CONTRACT_ID);
+    const account = await server.loadAccount(userAddress);
+    const tx = new TransactionBuilder(account, {
+      fee: "1000",
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(contract.call(
+        "deposit",
+        requireOwner(userAddress).toScVal(),
+        nativeToScVal(BigInt(amount), { type: "i128" }),
+      ))
+      .setTimeout(60)
+      .build();
+
+    const preparedTx = await sorobanServer.prepareTransaction(tx);
+    const signedXdr = await signTransaction(preparedTx.toXDR());
+    const signedTx = TransactionBuilder.fromXDR(signedXdr, Networks.TESTNET);
+    const result = await server.submitTransaction(signedTx);
+    return { success: true, hash: (result as any).hash };
+  } catch (e: any) {
+    console.error("[contractService] deposit failed:", e);
+    return { success: false, error: e.message || "deposit failed" };
+  }
+}
+
+export async function getVaultBalance(userAddress: string): Promise<string> {
+  try {
+    const contract = new Contract(CONTRACT_ID);
+    const account = await server.loadAccount(userAddress);
+    const tx = new TransactionBuilder(account, {
+      fee: "100",
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(contract.call("get_vault_balance", requireOwner(userAddress).toScVal()))
+      .setTimeout(30)
+      .build();
+
+    const simulation = await sorobanServer.simulateTransaction(tx);
+    if (!SorobanRpc.Api.isSimulationSuccess(simulation)) return "0";
+    const result = scValToNative(simulation.result!.retval);
+    return String(result ?? "0");
+  } catch (e) {
+    console.error("[contractService] getVaultBalance failed:", e);
+    return "0";
+  }
+}
+
+export async function executeDistribution(
+  userAddress: string,
+  signTransaction: (xdr: string) => Promise<string>,
+): Promise<{ success: boolean; hash?: string; error?: string }> {
+  try {
+    const contract = new Contract(CONTRACT_ID);
+    const account = await server.loadAccount(userAddress);
+    const tx = new TransactionBuilder(account, {
+      fee: "1000",
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(contract.call("execute_distribution", requireOwner(userAddress).toScVal()))
+      .setTimeout(60)
+      .build();
+
+    const preparedTx = await sorobanServer.prepareTransaction(tx);
+    const signedXdr = await signTransaction(preparedTx.toXDR());
+    const signedTx = TransactionBuilder.fromXDR(signedXdr, Networks.TESTNET);
+    const result = await server.submitTransaction(signedTx);
+    return { success: true, hash: (result as any).hash };
+  } catch (e: any) {
+    console.error("[contractService] executeDistribution failed:", e);
+    return { success: false, error: e.message || "execute_distribution failed" };
+  }
 }
 
 
@@ -127,7 +235,8 @@ export async function getLastActive(userAddress: string): Promise<number | null>
 
     if (SorobanRpc.Api.isSimulationSuccess(simulation)) {
       const result = scValToNative(simulation.result!.retval);
-      return Number(result);
+      const seconds = Number(result);
+      return Number.isFinite(seconds) ? seconds * 1000 : null;
     }
     return null;
   } catch (e) {
@@ -379,6 +488,10 @@ export const contractService = {
   setData,
   getLastActive,
   checkIn,
+  init,
+  deposit,
+  getVaultBalance,
+  executeDistribution,
   getNominees,
   setNominees,
   getTimeline,
