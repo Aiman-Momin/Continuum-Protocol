@@ -33,7 +33,7 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const STORE_PATH = path.join(DATA_DIR, "notifications.json");
 
 const CONTRACT_ID =
-  process.env.CONTRACT_ID || "CBLO64RZZQOY5BA26IZVFON64KSVYABMNF3TWB6AB2XWB5TYCDTKQCC4";
+  process.env.CONTRACT_ID || "CC2DYXLFZF7VF6KVWTP5QDYPMYDG2P7VYZFOCTYSAMLGTBLG5V7672HI";
 const DEFAULT_INACTIVITY_DAYS = 90;
 
 const horizon = new Horizon.Server("https://horizon-testnet.stellar.org");

@@ -147,7 +147,7 @@ impl SimpleStorage {
         let dep = get_owner_i128(&env, DEP_NS, &owner);
         put_owner_i128(&env, BAL_NS, &owner, bal + amount);
         put_owner_i128(&env, DEP_NS, &owner, dep + amount);
-        touch_last_active(&env, &owner);
+        // Note: Deposit does not reset inactivity timer; only check_in does.
         Ok(())
     }
 
@@ -334,7 +334,7 @@ impl SimpleStorage {
         env.storage()
             .persistent()
             .extend_ttl(&key, TTL_LEDGER_MIN, TTL_LEDGER_BUMP);
-        touch_last_active(&env, &owner);
+        // Note: Setting nominees does not reset inactivity timer; only check_in does.
     }
 
     /// Load nominees for an owner
@@ -354,7 +354,7 @@ impl SimpleStorage {
         env.storage()
             .persistent()
             .extend_ttl(&key, TTL_LEDGER_MIN, TTL_LEDGER_BUMP);
-        touch_last_active(&env, &owner);
+        // Note: Setting timeline does not reset inactivity timer; only check_in does.
     }
 
     /// Load release timeline for an owner
@@ -374,7 +374,7 @@ impl SimpleStorage {
         env.storage()
             .persistent()
             .extend_ttl(&key, TTL_LEDGER_MIN, TTL_LEDGER_BUMP);
-        touch_last_active(&env, &owner);
+        // Note: Setting distributions does not reset inactivity timer; only check_in does.
     }
 
     /// Load inactivity distribution phases for an owner
