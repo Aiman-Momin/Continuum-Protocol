@@ -176,122 +176,85 @@ impl SimpleStorage {
             return Err(ContinuumError::NothingToExecute);
         }
 
-        // Determine what bps has already been executed.
+        // Track cumulative bps executed so far
         let mut executed_bps = get_owner_u32(&env, EXEC_BPS_NS, &owner);
+        if executed_bps >= 10_000 {
+            return Err(ContinuumError::NothingToExecute);
+        }
 
-        // Execute phases in ascending inactivity_days.
         let client = get_token(&env)?;
         let total_deposited = get_owner_i128(&env, DEP_NS, &owner);
         let mut vault_balance = get_owner_i128(&env, BAL_NS, &owner);
-
         let mut executed_now_bps: u32 = 0;
 
-        // selection-sort like scan without allocation
-        let mut used = Vec::<u32>::new(&env);
+        // Build sorted list of phase indices by inactivity_days (ascending)
+        let mut sorted_indices = Vec::<u32>::new(&env);
         for _ in 0..phases.len() {
-            // find next smallest inactivity_days not used
             let mut min_idx: i32 = -1;
-            let mut min_days: u32 = 0;
+            let mut min_days: u32 = u32::MAX;
             for i in 0..phases.len() {
-                let d = phases.get(i).unwrap().inactivity_days;
-                let mut already = false;
-                for j in 0..used.len() {
-                    if used.get(j).unwrap() == i {
-                        already = true;
+                let phase = phases.get(i).unwrap();
+                let mut already_added = false;
+                for j in 0..sorted_indices.len() {
+                    if sorted_indices.get(j).unwrap() == i {
+                        already_added = true;
                         break;
                     }
                 }
-                if already {
-                    continue;
-                }
-                if min_idx == -1 || d < min_days {
+                if !already_added && phase.inactivity_days < min_days {
                     min_idx = i as i32;
-                    min_days = d;
+                    min_days = phase.inactivity_days;
                 }
             }
-
-            if min_idx == -1 {
-                break;
+            if min_idx >= 0 {
+                sorted_indices.push_back(min_idx as u32);
             }
-            used.push_back(min_idx as u32);
+        }
 
-            let phase = phases.get(min_idx as u32).unwrap();
+        // Execute phases in order
+        for i in 0..sorted_indices.len() {
+            let phase_idx = sorted_indices.get(i).unwrap();
+            let phase = phases.get(phase_idx).unwrap();
+
+            // Skip if inactivity threshold not met yet
             if phase.inactivity_days > days {
                 continue;
             }
 
-            // Phase total bps
+            // Calculate phase total bps
             let mut phase_bps: u32 = 0;
             for k in 0..phase.entries.len() {
                 phase_bps += phase.entries.get(k).unwrap().bps;
             }
 
-            // Skip phases already covered by executed_bps.
-            if executed_bps >= 10_000 {
-                break;
-            }
-            if executed_bps + phase_bps <= executed_bps {
-                continue;
-            }
-            // If we've already executed some bps, we only execute future phases.
-            // Our UI guarantees total across phases is 10000. We track cumulatively by adding each phase_bps.
-            if executed_bps > 0 {
-                // if this phase would be part of already-executed cumulative range, skip
-                // (naive approach: assume phases are executed in order; if executed_bps>0, we execute only next phases)
-            }
-
-            // Execute this phase only if it advances executed_bps.
-            // If executed_bps already includes this phase (from prior runs), skip.
-            // We treat executed_bps as sum of phase totals executed so far (ordered).
-            // To support that, we require executing in ascending days order and skip until we reach the first not-yet-executed phase.
-            // We do that by tracking executed_bps in sequence:
-            // - if executed_bps > 0, we have already executed some earlier phases.
-            // - we still need to detect how much earlier phases sum to, but we don't store per-phase flags.
-            // For simplicity, we store executed_bps as cumulative executed; on each run we only execute phases while executed_bps < cumulative_sum.
-            // We'll compute cumulative as we go.
-
-            // Compute cumulative bps up to this phase in sorted order
-            let mut cumulative_bps: u32 = 0;
-            for u in 0..used.len() {
-                let idx = used.get(u).unwrap();
-                let p = phases.get(idx).unwrap();
-                let mut pb: u32 = 0;
-                for kk in 0..p.entries.len() {
-                    pb += p.entries.get(kk).unwrap().bps;
-                }
-                cumulative_bps += pb;
-            }
-
-            // If we've already executed up to (or beyond) this cumulative, skip.
-            if executed_bps >= cumulative_bps {
+            // Skip if this phase was already executed
+            if executed_bps >= phase_bps {
+                executed_bps -= phase_bps;
                 continue;
             }
 
-            // Execute transfers for each entry in this phase based on total_deposited.
-            let mut _phase_amount_sent: i128 = 0;
+            // Execute this phase: transfer to all recipients
             for k in 0..phase.entries.len() {
                 let entry = phase.entries.get(k).unwrap();
                 let amt = (total_deposited * (entry.bps as i128)) / 10_000_i128;
-                if amt <= 0 {
-                    continue;
+                if amt > 0 {
+                    if vault_balance < amt {
+                        return Err(ContinuumError::InsufficientVaultBalance);
+                    }
+                    client.transfer(&env.current_contract_address(), &entry.address, &amt);
+                    vault_balance -= amt;
                 }
-                if vault_balance < amt {
-                    return Err(ContinuumError::InsufficientVaultBalance);
-                }
-                client.transfer(&env.current_contract_address(), &entry.address, &amt);
-                vault_balance -= amt;
-                _phase_amount_sent += amt;
             }
 
             executed_now_bps += phase_bps;
-            executed_bps = cumulative_bps;
+            executed_bps = 0; // Move to next phase
         }
 
         if executed_now_bps == 0 {
             return Err(ContinuumError::NothingToExecute);
         }
 
-        put_owner_u32(&env, EXEC_BPS_NS, &owner, executed_bps);
+        put_owner_u32(&env, EXEC_BPS_NS, &owner, executed_now_bps);
         put_owner_i128(&env, BAL_NS, &owner, vault_balance);
 
         Ok(executed_now_bps)

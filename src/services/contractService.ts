@@ -15,7 +15,7 @@ export const NATIVE_TOKEN_CONTRACT_ID = StellarSdk.Asset.native().contractId(Net
 const server = new Horizon.Server("https://horizon-testnet.stellar.org");
 const sorobanServer = new SorobanRpc.Server("https://soroban-testnet.stellar.org");
 
-export const CONTRACT_ID = "CC2DYXLFZF7VF6KVWTP5QDYPMYDG2P7VYZFOCTYSAMLGTBLG5V7672HI";
+export const CONTRACT_ID = "CDJKN3CFTOT2QTPGVDOPYKKNKYAIOZUIYCW6JAENAYX2XYZYID3DGE47";
 
 export type NomineeOnChain = {
   address: string; // Stellar address (G...)
