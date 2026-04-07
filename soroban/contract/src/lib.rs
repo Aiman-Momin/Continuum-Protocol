@@ -176,49 +176,16 @@ impl SimpleStorage {
             return Err(ContinuumError::NothingToExecute);
         }
 
-        // Track cumulative bps executed so far
-        let mut executed_bps = get_owner_u32(&env, EXEC_BPS_NS, &owner);
-        if executed_bps >= 10_000 {
-            return Err(ContinuumError::NothingToExecute);
-        }
-
         let client = get_token(&env)?;
         let total_deposited = get_owner_i128(&env, DEP_NS, &owner);
         let mut vault_balance = get_owner_i128(&env, BAL_NS, &owner);
         let mut executed_now_bps: u32 = 0;
 
-        // Build sorted list of phase indices by inactivity_days (ascending)
-        let mut sorted_indices = Vec::<u32>::new(&env);
-        for _ in 0..phases.len() {
-            let mut min_idx: i32 = -1;
-            let mut min_days: u32 = u32::MAX;
-            for i in 0..phases.len() {
-                let phase = phases.get(i).unwrap();
-                let mut already_added = false;
-                for j in 0..sorted_indices.len() {
-                    if sorted_indices.get(j).unwrap() == i {
-                        already_added = true;
-                        break;
-                    }
-                }
-                if !already_added && phase.inactivity_days < min_days {
-                    min_idx = i as i32;
-                    min_days = phase.inactivity_days;
-                }
-            }
-            if min_idx >= 0 {
-                sorted_indices.push_back(min_idx as u32);
-            }
-        }
-
-        // Execute phases in order
-        for i in 0..sorted_indices.len() {
-            let phase_idx = sorted_indices.get(i).unwrap();
-            let phase = phases.get(phase_idx).unwrap();
-
-            // Skip if inactivity threshold not met yet
+        // Execute all eligible phases (phases where inactivity_days <= current days)
+        for i in 0..phases.len() {
+            let phase = phases.get(i).unwrap();
             if phase.inactivity_days > days {
-                continue;
+                continue; // Not yet eligible
             }
 
             // Calculate phase total bps
@@ -227,13 +194,7 @@ impl SimpleStorage {
                 phase_bps += phase.entries.get(k).unwrap().bps;
             }
 
-            // Skip if this phase was already executed
-            if executed_bps >= phase_bps {
-                executed_bps -= phase_bps;
-                continue;
-            }
-
-            // Execute this phase: transfer to all recipients
+            // Execute transfers for this phase
             for k in 0..phase.entries.len() {
                 let entry = phase.entries.get(k).unwrap();
                 let amt = (total_deposited * (entry.bps as i128)) / 10_000_i128;
@@ -247,14 +208,14 @@ impl SimpleStorage {
             }
 
             executed_now_bps += phase_bps;
-            executed_bps = 0; // Move to next phase
         }
 
         if executed_now_bps == 0 {
             return Err(ContinuumError::NothingToExecute);
         }
 
-        put_owner_u32(&env, EXEC_BPS_NS, &owner, executed_now_bps);
+        // Mark as fully executed (set to 10000 to prevent re-execution)
+        put_owner_u32(&env, EXEC_BPS_NS, &owner, 10_000);
         put_owner_i128(&env, BAL_NS, &owner, vault_balance);
 
         Ok(executed_now_bps)
