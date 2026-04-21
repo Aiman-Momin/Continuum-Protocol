@@ -1,28 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  Shield, 
-  Clock, 
-  Users, 
-  Activity, 
-  AlertTriangle, 
-  ChevronRight, 
-  Plus, 
-  Settings, 
-  Lock,
-  Heart,
-  CheckCircle2,
-  ArrowRightLeft,
-  Wallet,
-  ExternalLink,
-  ArrowUpRight,
-  RefreshCw,
-  RotateCcw,
-  Info,
-  X,
-  Terminal,
-  Cpu,
-  Database,
-  History
+import {
+  Shield, Clock, Users, Activity, AlertTriangle, ChevronRight,
+  Heart, CheckCircle2, ArrowRightLeft, Wallet, ExternalLink,
+  ArrowUpRight, RefreshCw, RotateCcw, X, Cpu, Database, History,
+  Info, Plus, Settings, Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { VaultStatus, VaultState, Beneficiary } from './types';
@@ -39,80 +20,55 @@ import { TransactionToastContainer, Toast } from './components/TransactionToastC
 import { calculateInactivityStatus } from './services/inactivityService';
 
 const STORAGE_KEYS = {
-  nominees: (pubKey: string) => `continuum:nominees:${pubKey}`,
-  timeline: (pubKey: string) => `continuum:timeline:${pubKey}`,
-  distributions: (pubKey: string) => `continuum:distributions:${pubKey}`,
-  history: (pubKey: string) => `continuum:history:${pubKey}`,
-  inactivityDailyNotice: (pubKey: string) => `continuum:inactivity-notice-day:${pubKey}`,
-  inactivityCycleLastActive: (pubKey: string) => `continuum:inactivity-cycle-last-active:${pubKey}`,
+  nominees: (k: string) => `continuum:nominees:${k}`,
+  timeline: (k: string) => `continuum:timeline:${k}`,
+  distributions: (k: string) => `continuum:distributions:${k}`,
+  history: (k: string) => `continuum:history:${k}`,
+  inactivityDailyNotice: (k: string) => `continuum:inactivity-notice-day:${k}`,
+  inactivityCycleLastActive: (k: string) => `continuum:inactivity-cycle-last-active:${k}`,
 };
 
 function safeJsonParse<T>(value: string | null): T | null {
   if (!value) return null;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(value) as T; } catch { return null; }
 }
 
 const XLM_TO_STROOPS = 10_000_000;
 
-// UI role ids -> on-chain Symbol strings (stored in contract as `Symbol`)
 const ROLE_ID_TO_SYMBOL: Record<string, string> = {
-  executor: 'EXEC',
-  beneficiary: 'BENF',
-  trustee: 'TRUS',
-  advisor: 'ADVS',
+  executor: 'EXEC', beneficiary: 'BENF', trustee: 'TRUS', advisor: 'ADVS',
 };
-
 const ROLE_SYMBOL_TO_ID: Record<string, string> = {
-  EXEC: 'executor',
-  BENF: 'beneficiary',
-  TRUS: 'trustee',
-  ADVS: 'advisor',
+  EXEC: 'executor', BENF: 'beneficiary', TRUS: 'trustee', ADVS: 'advisor',
 };
 
 function roleSymbolToId(symbol: string): string {
   const s = String(symbol || '').toUpperCase().trim();
   return ROLE_SYMBOL_TO_ID[s] || ROLE_SYMBOL_TO_ID[s.slice(0, 4)] || 'beneficiary';
 }
-
 function roleIdToSymbol(roleId: string): string {
   return ROLE_ID_TO_SYMBOL[roleId] || 'BENF';
 }
-
 function stroopsToXlmString(stroops: string): string {
   try {
     const v = BigInt(stroops);
-    // toFixed needs number, but the value is just for UI; safe enough after scaling
     const xlm = Number(v) / XLM_TO_STROOPS;
     return Number.isFinite(xlm) ? xlm.toFixed(2) : '0.00';
   } catch {
     const n = Number(stroops);
-    if (!Number.isFinite(n)) return '0.00';
-    return (n / XLM_TO_STROOPS).toFixed(2);
+    return Number.isFinite(n) ? (n / XLM_TO_STROOPS).toFixed(2) : '0.00';
   }
 }
-
 function xlmToStroopsString(xlm: string): string {
   const n = parseFloat(xlm);
   if (!Number.isFinite(n)) return '0';
-  // Keep integer stroops (contract expects i128)
   return String(BigInt(Math.round(n * XLM_TO_STROOPS)));
 }
-
 function unixSecondsToDatetimeLocalString(seconds: number): string {
   const d = new Date(seconds * 1000);
   const pad = (v: number) => String(v).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  const mm = pad(d.getMonth() + 1);
-  const dd = pad(d.getDate());
-  const hh = pad(d.getHours());
-  const min = pad(d.getMinutes());
-  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
-
 function getLocalDateKey(now = new Date()): string {
   const pad = (v: number) => String(v).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
@@ -128,6 +84,9 @@ export interface TransactionRecord {
   hash?: string;
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   APP
+═══════════════════════════════════════════════════════════════════ */
 export default function App() {
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [balance, setBalance] = useState<number>(0);
@@ -141,8 +100,7 @@ export default function App() {
   const [isFunding, setIsFunding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<TransactionRecord[]>([]);
-  
-  // Transaction State
+
   const [showSendModal, setShowSendModal] = useState(false);
   const [destAddress, setDestAddress] = useState('');
   const [sendAmount, setSendAmount] = useState('');
@@ -150,62 +108,45 @@ export default function App() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [txError, setTxError] = useState<string | null>(null);
 
-  // Vault Deposit State (required for auto-distribution)
   const [depositXlm, setDepositXlm] = useState('');
   const [isDepositing, setIsDepositing] = useState(false);
   const [isExecutingDistribution, setIsExecutingDistribution] = useState(false);
   const [vaultBalanceStroops, setVaultBalanceStroops] = useState<string>('0');
   const autoDistributionTriggeredRef = useRef(false);
-  
-  // Toast Notifications
-  const [toasts, setToasts] = useState<Toast[]>([]);
 
-  // Staged Data - stored by account publicKey
+  const [toasts, setToasts] = useState<Toast[]>([]);
   const [stagedNominees, setStagedNominees] = useState<Record<string, any[]>>({});
   const [stagedTimeline, setStagedTimeline] = useState<Record<string, any[]>>({});
   const [stagedDistributions, setStagedDistributions] = useState<Record<string, any[]>>({});
 
-  // Load staged config and activity history from durable storage whenever account changes
   useEffect(() => {
     if (!publicKey) return;
-
-    const savedNominees = safeJsonParse<any[]>(localStorage.getItem(STORAGE_KEYS.nominees(publicKey)));
-    const savedTimeline = safeJsonParse<any[]>(localStorage.getItem(STORAGE_KEYS.timeline(publicKey)));
-    const savedDistributions = safeJsonParse<any[]>(localStorage.getItem(STORAGE_KEYS.distributions(publicKey)));
-    const savedHistory = safeJsonParse<TransactionRecord[]>(localStorage.getItem(STORAGE_KEYS.history(publicKey)));
-
-    if (savedNominees) setStagedNominees(prev => ({ ...prev, [publicKey]: savedNominees }));
-    if (savedTimeline) setStagedTimeline(prev => ({ ...prev, [publicKey]: savedTimeline }));
-    if (savedDistributions) setStagedDistributions(prev => ({ ...prev, [publicKey]: savedDistributions }));
-    if (savedHistory) setHistory(savedHistory);
+    const sN = safeJsonParse<any[]>(localStorage.getItem(STORAGE_KEYS.nominees(publicKey)));
+    const sT = safeJsonParse<any[]>(localStorage.getItem(STORAGE_KEYS.timeline(publicKey)));
+    const sD = safeJsonParse<any[]>(localStorage.getItem(STORAGE_KEYS.distributions(publicKey)));
+    const sH = safeJsonParse<TransactionRecord[]>(localStorage.getItem(STORAGE_KEYS.history(publicKey)));
+    if (sN) setStagedNominees(p => ({ ...p, [publicKey]: sN }));
+    if (sT) setStagedTimeline(p => ({ ...p, [publicKey]: sT }));
+    if (sD) setStagedDistributions(p => ({ ...p, [publicKey]: sD }));
+    if (sH) setHistory(sH);
   }, [publicKey]);
 
-  // Poll contract vault balance
   useEffect(() => {
     if (!publicKey) return;
     let cancelled = false;
-
     const load = async () => {
       const bal = await contractService.getVaultBalance(publicKey);
       if (!cancelled) setVaultBalanceStroops(bal);
     };
-
     load();
     const t = setInterval(load, 15_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
+    return () => { cancelled = true; clearInterval(t); };
   }, [publicKey]);
 
-  // Load config from chain on login (and cache locally)
   useEffect(() => {
     if (!publicKey) return;
     let cancelled = false;
-
     const wallet = selectedWallet || WalletType.FREIGHTER;
-    const sign = (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet);
-
     const load = async () => {
       try {
         const [nominees, timeline, distributions] = await Promise.all([
@@ -213,230 +154,80 @@ export default function App() {
           contractService.getTimeline(publicKey),
           contractService.getDistributions(publicKey),
         ]);
-
         if (cancelled) return;
-
         if (nominees.length) {
-          const uiNominees = nominees.map((n) => {
-            const roleId = roleSymbolToId(n.role);
-            return {
-              id: `${n.address}:${roleId}`,
-              address: n.address,
-              role: roleId,
-              // bps is basis points: 10000 = 100%
-              percentage: (n.bps / 100).toFixed(2),
-            };
-          });
-          setStagedNominees((prev) => ({ ...prev, [publicKey]: uiNominees }));
-          localStorage.setItem(STORAGE_KEYS.nominees(publicKey), JSON.stringify(uiNominees));
+          const ui = nominees.map(n => ({ id: `${n.address}:${roleSymbolToId(n.role)}`, address: n.address, role: roleSymbolToId(n.role), percentage: (n.bps / 100).toFixed(2) }));
+          setStagedNominees(p => ({ ...p, [publicKey]: ui }));
+          localStorage.setItem(STORAGE_KEYS.nominees(publicKey), JSON.stringify(ui));
         }
-
         if (timeline.length) {
-          const uiTimeline = timeline.map((s) => ({
-            id: `t-${s.when}-${s.amount}`,
-            // Convert unix seconds -> `datetime-local` compatible string
-            date: unixSecondsToDatetimeLocalString(s.when),
-            // contract stores i128 amount in stroops (integer)
-            amount: stroopsToXlmString(String(s.amount)),
-            description: s.memo === "NONE" ? "" : String(s.memo),
-          }));
-          setStagedTimeline((prev) => ({ ...prev, [publicKey]: uiTimeline }));
-          localStorage.setItem(STORAGE_KEYS.timeline(publicKey), JSON.stringify(uiTimeline));
+          const ui = timeline.map(s => ({ id: `t-${s.when}-${s.amount}`, date: unixSecondsToDatetimeLocalString(s.when), amount: stroopsToXlmString(String(s.amount)), description: s.memo === "NONE" ? "" : String(s.memo) }));
+          setStagedTimeline(p => ({ ...p, [publicKey]: ui }));
+          localStorage.setItem(STORAGE_KEYS.timeline(publicKey), JSON.stringify(ui));
         }
-
         if (distributions.length) {
-          // Need nominee ids to match the UI editor keys.
-          const addressToNomineeId: Record<string, string> = {};
-          const uiNomineesForMap = nominees.map((n) => {
-            const roleId = roleSymbolToId(n.role);
-            return { address: n.address, id: `${n.address}:${roleId}` };
-          });
-          for (const n of uiNomineesForMap) addressToNomineeId[n.address] = n.id;
-
-          const uiDistributions = distributions.map((p) => ({
-            id: `p-${p.inactivity_days}`,
-            inactivityDays: p.inactivity_days,
-            distributions: p.entries.reduce(
-              (acc: Record<string, string>, e) => {
-                const nomineeId = addressToNomineeId[e.address];
-                if (!nomineeId) return acc;
-                acc[nomineeId] = (e.bps / 100).toFixed(2);
-                return acc;
-              },
-              {},
-            ),
-          }));
-          setStagedDistributions((prev) => ({ ...prev, [publicKey]: uiDistributions }));
-          localStorage.setItem(STORAGE_KEYS.distributions(publicKey), JSON.stringify(uiDistributions));
+          const addrToId: Record<string, string> = {};
+          nominees.forEach(n => { addrToId[n.address] = `${n.address}:${roleSymbolToId(n.role)}`; });
+          const ui = distributions.map(p => ({ id: `p-${p.inactivity_days}`, inactivityDays: p.inactivity_days, distributions: p.entries.reduce((acc: Record<string, string>, e) => { const id = addrToId[e.address]; if (id) acc[id] = (e.bps / 100).toFixed(2); return acc; }, {}) }));
+          setStagedDistributions(p => ({ ...p, [publicKey]: ui }));
+          localStorage.setItem(STORAGE_KEYS.distributions(publicKey), JSON.stringify(ui));
         }
-      } catch (e) {
-        console.error("[App] Failed to load on-chain config:", e);
-      }
+      } catch (e) { console.error("[App] load config:", e); }
     };
-
     load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [publicKey, selectedWallet]);
 
-  // Get current account's saved nominees/timeline/distributions (empty if account has none)
   const currentNominees = publicKey ? (stagedNominees[publicKey] || []) : [];
   const currentTimeline = publicKey ? (stagedTimeline[publicKey] || []) : [];
   const currentDistributions = publicKey ? (stagedDistributions[publicKey] || []) : [];
 
-  const nomineesTotalPct = currentNominees.reduce((sum: number, n: any) => {
-    const pct = parseFloat(String(n.percentage)) || 0;
-    return sum + pct;
-  }, 0);
-
+  const nomineesTotalPct = currentNominees.reduce((s: number, n: any) => s + (parseFloat(String(n.percentage)) || 0), 0);
   const isNomineesLocked = currentNominees.length > 0 && Math.abs(nomineesTotalPct - 100) < 0.01;
-
-  const distributionsTotalPct = currentDistributions.reduce((sum: number, phase: any) => {
-    const phaseTotal: number = (Object.values(phase.distributions || {}) as any[]).reduce(
-      (s: number, pct: any) => s + (parseFloat(String(pct)) || 0),
-      0,
-    );
-    return sum + phaseTotal;
-  }, 0);
-
-  const isDistributionsLocked =
-    currentDistributions.length > 0 && Math.abs(distributionsTotalPct - 100) < 0.01;
-
+  const distributionsTotalPct = currentDistributions.reduce((s: number, p: any) => s + (Object.values(p.distributions || {}) as any[]).reduce((ps: number, pct: any) => ps + (parseFloat(String(pct)) || 0), 0), 0);
+  const isDistributionsLocked = currentDistributions.length > 0 && Math.abs(distributionsTotalPct - 100) < 0.01;
   const isTimelineLocked = currentTimeline.length > 0;
 
-  // Calculate inactivity status based on multi-condition logic
-  const configuredInactivityDays = currentDistributions.length
-    ? Math.min(...currentDistributions.map((phase: any) => phase.inactivityDays))
-    : null;
-  const inactivityThresholdMs = configuredInactivityDays
-    ? configuredInactivityDays * 24 * 60 * 60 * 1000
-    : null;
-  const inactivityStatus = vault && inactivityThresholdMs
-    ? calculateInactivityStatus(history, inactivityThresholdMs, vault.lastActive)
-    : null;
+  const configuredInactivityDays = currentDistributions.length ? Math.min(...currentDistributions.map((p: any) => p.inactivityDays)) : null;
+  const inactivityThresholdMs = configuredInactivityDays ? configuredInactivityDays * 86400000 : null;
+  const inactivityStatus = vault && inactivityThresholdMs ? calculateInactivityStatus(history, inactivityThresholdMs, vault.lastActive) : null;
 
-  const elapsedChainDays = vault && vault.lastActive
-    ? Math.floor((Date.now() - vault.lastActive) / (1000 * 60 * 60 * 24))
-    : null;
-  const distributionPhaseCandidates = currentDistributions
-    .filter((phase: any) => phase.inactivityDays !== null && phase.inactivityDays !== undefined);
-  const hasEligibleDistributionPhase = elapsedChainDays !== null
-    ? distributionPhaseCandidates.some((phase: any) => elapsedChainDays >= Number(phase.inactivityDays))
-    : false;
-  const hasDistributionConfig = currentDistributions.length > 0;
-  const distributionReady = Boolean(vault && vault.lastActive && hasDistributionConfig && hasEligibleDistributionPhase);
+  const elapsedChainDays = vault?.lastActive ? Math.floor((Date.now() - vault.lastActive) / 86400000) : null;
+  const hasEligibleDistributionPhase = elapsedChainDays !== null ? currentDistributions.some((p: any) => elapsedChainDays >= Number(p.inactivityDays)) : false;
+  const distributionReady = Boolean(vault?.lastActive && currentDistributions.length > 0 && hasEligibleDistributionPhase);
 
-  // Toast Management
   const addToast = useCallback((toast: Omit<Toast, 'id'> & { id?: string }) => {
     const id = toast.id || Math.random().toString(36).substr(2, 9);
-    const newToast: Toast = {
-      ...toast,
-      id,
-      autoHideDelay: toast.autoHideDelay || (toast.status === 'pending' ? 0 : 5000),
-    };
-    setToasts(prev => [...prev, newToast]);
-    
-    if (newToast.autoHideDelay && newToast.autoHideDelay > 0) {
-      setTimeout(() => removeToast(id), newToast.autoHideDelay);
-    }
-    
+    const t: Toast = { ...toast, id, autoHideDelay: toast.autoHideDelay || (toast.status === 'pending' ? 0 : 5000) };
+    setToasts(prev => [...prev, t]);
+    if (t.autoHideDelay && t.autoHideDelay > 0) setTimeout(() => removeToast(id), t.autoHideDelay);
     return id;
   }, []);
+  const removeToast = useCallback((id: string) => setToasts(p => p.filter(t => t.id !== id)), []);
+  const updateToast = useCallback((id: string, updates: Partial<Toast>) => setToasts(p => p.map(t => t.id === id ? { ...t, ...updates } : t)), []);
 
-  const removeToast = useCallback((id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  }, []);
-
-  const updateToast = useCallback((id: string, updates: Partial<Toast>) => {
-    setToasts(prev =>
-      prev.map(t => (t.id === id ? { ...t, ...updates } : t))
-    );
-  }, []);
-
-  // Connect Wallet Handler
-  const handleConnect = () => {
-    setShowWalletModal(true);
-  };
+  const handleConnect = () => setShowWalletModal(true);
 
   const connectToWallet = async (type: WalletType) => {
-    setError(null);
-    setIsConnecting(true);
-    setShowWalletModal(false);
-    
+    setError(null); setIsConnecting(true); setShowWalletModal(false);
     try {
-      let isAvailable = false;
-      if (type === WalletType.FREIGHTER) {
-        isAvailable = await stellarService.checkFreighter();
-      } else if (type === WalletType.METAMASK) {
-        isAvailable = await stellarService.checkMetaMask();
-      }
-
-      if (!isAvailable) {
-        setError(`${type.charAt(0).toUpperCase() + type.slice(1)} wallet not detected. Please install the extension.`);
-        setIsConnecting(false);
-        return;
-      }
-
+      let avail = type === WalletType.FREIGHTER ? await stellarService.checkFreighter() : await stellarService.checkMetaMask();
+      if (!avail) { setError(`${type} wallet not detected. Please install the extension.`); setIsConnecting(false); return; }
       const address = await stellarService.connectWallet(type);
-      if (address) {
-        setPublicKey(address);
-        setSelectedWallet(type);
-        await refreshAccountData(address);
-      }
-    } catch (err: any) {
-      setError(err.message || "Connection rejected or failed. Please try again.");
-      console.error("[App] Connection error:", err);
-    } finally {
-      setIsConnecting(false);
-    }
+      if (address) { setPublicKey(address); setSelectedWallet(type); await refreshAccountData(address); }
+    } catch (err: any) { setError(err.message || "Connection failed."); }
+    finally { setIsConnecting(false); }
   };
 
   const refreshAccountData = async (address: string) => {
     const bal = await stellarService.getAccountBalance(address);
     const lastActive = await contractService.getLastActive(address);
     setBalance(bal);
-    setVault({
-      owner: address,
-      lastActive: lastActive || 0,
-      threshold: 1000 * 60 * 60 * 24 * 90,
-      status: lastActive && lastActive > 0 ? VaultStatus.Active : VaultStatus.InactivityDetected,
-      beneficiaries: [
-        { address: "GB...9Y2", percentage: 50, name: "Legacy Trust" }
-      ],
-      balance: bal
-    });
+    setVault({ owner: address, lastActive: lastActive || 0, threshold: 86400000 * 90, status: lastActive && lastActive > 0 ? VaultStatus.Active : VaultStatus.InactivityDetected, beneficiaries: [{ address: "GB...9Y2", percentage: 50, name: "Legacy Trust" }], balance: bal });
   };
 
-  const handleFundWallet = async () => {
-    if (!publicKey) return;
-    setIsFunding(true);
-    try {
-      const result = await stellarService.fundAccount(publicKey);
-      if (result.success) {
-        await refreshAccountData(publicKey);
-      } else {
-        setError("Funding failed: " + result.error);
-      }
-    } catch (err) {
-      console.error("Funding error", err);
-    } finally {
-      setIsFunding(false);
-    }
-  };
+  const handleDisconnect = () => { setPublicKey(null); setSelectedWallet(null); setBalance(0); setVault(null); setHistory([]); setError(null); setDepositXlm(''); setVaultBalanceStroops('0'); };
 
-  const handleDisconnect = () => {
-    setPublicKey(null);
-    setSelectedWallet(null);
-    setBalance(0);
-    setVault(null);
-    setHistory([]);
-    setError(null);
-    setDepositXlm('');
-    setVaultBalanceStroops('0');
-  };
-
-  // Persist history changes across refreshes for the active wallet
   useEffect(() => {
     if (!publicKey) return;
     localStorage.setItem(STORAGE_KEYS.history(publicKey), JSON.stringify(history));
@@ -444,1747 +235,711 @@ export default function App() {
 
   const handleDeposit = async () => {
     if (!publicKey) return;
-    const amountNum = parseFloat(depositXlm);
-    if (!Number.isFinite(amountNum) || amountNum <= 0) {
-      addToast({
-        status: 'failed',
-        message: 'Invalid deposit amount',
-        detail: 'Enter a positive XLM amount',
-      });
-      return;
-    }
-
+    const n = parseFloat(depositXlm);
+    if (!Number.isFinite(n) || n <= 0) { addToast({ status: 'failed', message: 'Invalid amount', detail: 'Enter a positive XLM amount' }); return; }
     const wallet = selectedWallet || WalletType.FREIGHTER;
     setIsDepositing(true);
     try {
-      const res = await contractService.deposit(
-        publicKey,
-        xlmToStroopsString(depositXlm),
-        (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet),
-      );
-
+      const res = await contractService.deposit(publicKey, xlmToStroopsString(depositXlm), (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet));
       if (res.success) {
-        addToast({
-          status: 'success',
-          message: 'Deposit submitted',
-          detail: `${depositXlm} XLM deposited into contract vault`,
-          hash: res.hash,
-        });
+        addToast({ status: 'success', message: 'Deposit successful', detail: `${depositXlm} XLM deposited`, hash: res.hash });
         setDepositXlm('');
         const bal = await contractService.getVaultBalance(publicKey);
         setVaultBalanceStroops(bal);
-
         const lastActive = await contractService.getLastActive(publicKey);
-        if (lastActive && lastActive > 0) {
-          setVault(prev => prev ? { ...prev, lastActive, status: VaultStatus.Active } : prev);
-        } else {
-          const sign = (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet);
-          const checkInRes = await contractService.checkIn(publicKey, sign);
-          if (checkInRes.success) {
-            setVault(prev => prev ? { ...prev, lastActive: Date.now(), status: VaultStatus.Active } : prev);
-            addToast({
-              status: 'success',
-              message: 'Activity Recorded',
-              detail: 'Proof-of-life recorded after deposit',
-              hash: checkInRes.hash,
-            });
-          } else {
-            addToast({
-              status: 'warning',
-              message: 'Activity Not Recorded',
-              detail: 'Deposit succeeded but no on-chain activity was detected. Please click Check In once.',
-            });
-          }
+        if (lastActive && lastActive > 0) { setVault(p => p ? { ...p, lastActive, status: VaultStatus.Active } : p); }
+        else {
+          const ci = await contractService.checkIn(publicKey, (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet));
+          if (ci.success) { setVault(p => p ? { ...p, lastActive: Date.now(), status: VaultStatus.Active } : p); addToast({ status: 'success', message: 'Activity recorded', detail: 'Proof-of-life set after deposit', hash: ci.hash }); }
+          else addToast({ status: 'warning', message: 'No activity recorded', detail: 'Deposit succeeded but check-in failed. Click Check In manually.' });
         }
-      } else {
-        addToast({
-          status: 'failed',
-          message: 'Deposit failed',
-          detail: res.error || 'Could not deposit into vault',
-        });
-      }
-    } catch (e: any) {
-      addToast({
-        status: 'failed',
-        message: 'Deposit error',
-        detail: e?.message || 'Unexpected error',
-      });
-    } finally {
-      setIsDepositing(false);
-    }
+      } else addToast({ status: 'failed', message: 'Deposit failed', detail: res.error || 'Could not deposit' });
+    } catch (e: any) { addToast({ status: 'failed', message: 'Deposit error', detail: e?.message }); }
+    finally { setIsDepositing(false); }
   };
 
   const handleSendXLM = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!publicKey || !destAddress || !sendAmount) return;
-    
-    const amountNum = parseFloat(sendAmount);
-    if (isNaN(amountNum) || amountNum <= 0) {
-      setTxError('Please enter a valid amount');
-      addToast({
-        status: 'failed',
-        message: 'Invalid Amount',
-        detail: 'Please enter a valid amount greater than 0',
-      });
-      return;
-    }
-
-    if (!destAddress.startsWith('G') || destAddress.length !== 56) {
-      setTxError('Invalid Stellar address format');
-      addToast({
-        status: 'failed',
-        message: 'Invalid Address',
-        detail: 'Please enter a valid Stellar address (starting with G)',
-      });
-      return;
-    }
-
-    if (amountNum > balance) {
-      setTxError('Insufficient balance');
-      addToast({
-        status: 'failed',
-        message: 'Insufficient Balance',
-        detail: `You have ${balance.toFixed(4)} XLM available`,
-      });
-      return;
-    }
-
-    setTxStatus('pending');
-    setTxError(null);
-    
-    // Show pending toast
-    const toastId = addToast({
-      id: `tx-${Date.now()}`,
-      status: 'pending',
-      message: 'Transfer Processing',
-      detail: `Sending ${sendAmount} XLM to ${destAddress.slice(0, 6)}...`,
-    });
-    
+    const n = parseFloat(sendAmount);
+    if (isNaN(n) || n <= 0) { setTxError('Valid amount required'); return; }
+    if (!destAddress.startsWith('G') || destAddress.length !== 56) { setTxError('Invalid Stellar address'); return; }
+    if (n > balance) { setTxError('Insufficient balance'); return; }
+    setTxStatus('pending'); setTxError(null);
+    const toastId = addToast({ id: `tx-${Date.now()}`, status: 'pending', message: 'Transfer processing', detail: `Sending ${sendAmount} XLM…` });
     const result = await stellarService.sendXLM(publicKey, destAddress, sendAmount, selectedWallet || WalletType.FREIGHTER);
-    
     if (result.success) {
-      setTxStatus('success');
-      setTxHash(result.hash || null);
-      const newBal = await stellarService.getAccountBalance(publicKey);
-      setBalance(newBal);
-      
-      // Update pending toast to success
-      updateToast(toastId, {
-        status: 'success',
-        message: 'Transfer Complete',
-        detail: `${sendAmount} XLM sent successfully`,
-        hash: result.hash,
-      });
-      
-      // Add to history
-      const newTx: TransactionRecord = {
-        id: Math.random().toString(36).substr(2, 9),
-        type: 'TRANSFER',
-        amount: sendAmount,
-        dest: destAddress,
-        status: 'SUCCESS',
-        timestamp: Date.now(),
-        hash: result.hash
-      };
-      setHistory(prev => [newTx, ...prev]);
+      setTxStatus('success'); setTxHash(result.hash || null);
+      setBalance(await stellarService.getAccountBalance(publicKey));
+      updateToast(toastId, { status: 'success', message: 'Transfer complete', detail: `${sendAmount} XLM sent`, hash: result.hash });
+      setHistory(p => [{ id: Math.random().toString(36).substr(2, 9), type: 'TRANSFER', amount: sendAmount, dest: destAddress, status: 'SUCCESS', timestamp: Date.now(), hash: result.hash }, ...p]);
     } else {
-      setTxStatus('error');
-      setTxError(result.error || 'Transaction failed');
-      
-      // Update pending toast to error
-      updateToast(toastId, {
-        status: 'failed',
-        message: 'Transfer Failed',
-        detail: result.error || 'An error occurred while processing the transfer',
-      });
-      
-      const failedTx: TransactionRecord = {
-        id: Math.random().toString(36).substr(2, 9),
-        type: 'TRANSFER',
-        amount: sendAmount,
-        dest: destAddress,
-        status: 'FAILED',
-        timestamp: Date.now()
-      };
-      setHistory(prev => [failedTx, ...prev]);
+      setTxStatus('error'); setTxError(result.error || 'Transaction failed');
+      updateToast(toastId, { status: 'failed', message: 'Transfer failed', detail: result.error });
+      setHistory(p => [{ id: Math.random().toString(36).substr(2, 9), type: 'TRANSFER', amount: sendAmount, dest: destAddress, status: 'FAILED', timestamp: Date.now() }, ...p]);
     }
   };
 
   const handleResetActivity = async () => {
     if (!publicKey) return;
     setIsResetting(true);
-    
-    const toastId = addToast({
-      id: `reset-${Date.now()}`,
-      status: 'pending',
-      message: 'Resetting Activity...',
-      detail: 'Updating your proof-of-life signal...',
-    });
-    
+    const toastId = addToast({ id: `reset-${Date.now()}`, status: 'pending', message: 'Resetting activity…', detail: 'Updating proof-of-life signal' });
     try {
       const wallet = selectedWallet || WalletType.FREIGHTER;
-      const result = await contractService.checkIn(publicKey, (xdr: string) =>
-        stellarService.signXDR(xdr, publicKey, wallet),
-      );
-      
+      const result = await contractService.checkIn(publicKey, (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet));
       if (result.success && vault) {
         setVault({ ...vault, lastActive: Date.now(), status: VaultStatus.Active });
-        setHistory(prev => [{
-          id: Math.random().toString(36).substr(2, 9),
-          type: 'CHECK_IN',
-          status: 'SUCCESS',
-          timestamp: Date.now(),
-          hash: result.hash
-        }, ...prev]);
-        
-        updateToast(toastId, {
-          status: 'success',
-          message: 'Activity Reset Successfully',
-          detail: 'Inactivity status has been reset to Active',
-          hash: result.hash,
-        });
-      } else {
-        updateToast(toastId, {
-          status: 'failed',
-          message: 'Reset Failed',
-          detail: 'Unable to reset activity status',
-        });
-      }
-    } catch (e: any) {
-      console.error("Activity reset failed:", e);
-      updateToast(toastId, {
-        status: 'failed',
-        message: 'Reset Error',
-        detail: e.message || 'An unexpected error occurred',
-      });
-    } finally {
-      setIsResetting(false);
-    }
+        setHistory(p => [{ id: Math.random().toString(36).substr(2, 9), type: 'CHECK_IN', status: 'SUCCESS', timestamp: Date.now(), hash: result.hash }, ...p]);
+        updateToast(toastId, { status: 'success', message: 'Activity reset', detail: 'Inactivity clock restarted', hash: result.hash });
+      } else updateToast(toastId, { status: 'failed', message: 'Reset failed', detail: 'Unable to reset activity' });
+    } catch (e: any) { updateToast(toastId, { status: 'failed', message: 'Reset error', detail: e.message }); }
+    finally { setIsResetting(false); }
   };
 
   const handleCheckIn = async () => {
     if (!publicKey) return;
     setIsCheckingIn(true);
-    
-    // Show pending toast
-    const toastId = addToast({
-      id: `checkin-${Date.now()}`,
-      status: 'pending',
-      message: 'Proof of Life',
-      detail: 'Sending heartbeat signal to the protocol...',
-    });
-    
+    const toastId = addToast({ id: `ci-${Date.now()}`, status: 'pending', message: 'Sending heartbeat…', detail: 'Proof-of-life signal transmitted' });
     try {
       const wallet = selectedWallet || WalletType.FREIGHTER;
-      const result = await contractService.checkIn(publicKey, (xdr: string) =>
-        stellarService.signXDR(xdr, publicKey, wallet),
-      );
-      
+      const result = await contractService.checkIn(publicKey, (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet));
       if (result.success && vault) {
         setVault({ ...vault, lastActive: Date.now(), status: VaultStatus.Active });
-        
-        // Update toast to success
-        updateToast(toastId, {
-          status: 'success',
-          message: 'Check-in Successful',
-          detail: 'Your inactivity clock has been reset',
-          hash: result.hash,
-        });
-        
-        setHistory(prev => [{
-          id: Math.random().toString(36).substr(2, 9),
-          type: 'CHECK_IN',
-          status: 'SUCCESS',
-          timestamp: Date.now(),
-          hash: result.hash
-        }, ...prev]);
+        updateToast(toastId, { status: 'success', message: 'Check-in confirmed', detail: 'Inactivity clock reset', hash: result.hash });
+        setHistory(p => [{ id: Math.random().toString(36).substr(2, 9), type: 'CHECK_IN', status: 'SUCCESS', timestamp: Date.now(), hash: result.hash }, ...p]);
       } else {
-        // Check-in failed
-        updateToast(toastId, {
-          status: 'failed',
-          message: 'Check-in Failed',
-          detail: 'Unable to send proof of life signal',
-        });
-        
-        setHistory(prev => [{
-          id: Math.random().toString(36).substr(2, 9),
-          type: 'CHECK_IN',
-          status: 'FAILED',
-          timestamp: Date.now(),
-        }, ...prev]);
+        updateToast(toastId, { status: 'failed', message: 'Check-in failed', detail: 'Could not send proof-of-life' });
+        setHistory(p => [{ id: Math.random().toString(36).substr(2, 9), type: 'CHECK_IN', status: 'FAILED', timestamp: Date.now() }, ...p]);
       }
     } catch (e: any) {
-      console.error("Check-in failed:", e);
-      updateToast(toastId, {
-        status: 'failed',
-        message: 'Check-in Error',
-        detail: e.message || 'An unexpected error occurred',
-      });
-      
-      setHistory(prev => [{
-        id: Math.random().toString(36).substr(2, 9),
-        type: 'CHECK_IN',
-        status: 'FAILED',
-        timestamp: Date.now(),
-      }, ...prev]);
-    } finally {
-      setIsCheckingIn(false);
+      updateToast(toastId, { status: 'failed', message: 'Check-in error', detail: e.message });
+      setHistory(p => [{ id: Math.random().toString(36).substr(2, 9), type: 'CHECK_IN', status: 'FAILED', timestamp: Date.now() }, ...p]);
     }
+    finally { setIsCheckingIn(false); }
   };
 
   const handleExecuteDistribution = useCallback(async () => {
     if (!publicKey) return;
     const lastActive = await contractService.getLastActive(publicKey);
-    if (!lastActive || lastActive === 0) {
-      addToast({
-        status: 'failed',
-        message: 'Distribution Not Available',
-        detail: 'No on-chain activity has been recorded yet. Please perform a proof-of-life or deposit first.',
-      });
-      return;
-    }
-
-    if (vault?.lastActive !== lastActive) {
-      setVault((prev) => prev ? { ...prev, lastActive } : prev);
-    }
-
-    if (currentDistributions.length === 0) {
-      addToast({
-        status: 'failed',
-        message: 'Distribution Not Available',
-        detail: 'No distribution phases are configured on-chain yet.',
-      });
-      return;
-    }
-
-    const elapsedDaysSinceActive = lastActive
-      ? Math.floor((Date.now() - lastActive) / (1000 * 60 * 60 * 24))
-      : 0;
-    const hasPhaseReady = currentDistributions.some((phase: any) =>
-      Number(phase.inactivityDays) <= elapsedDaysSinceActive,
-    );
-    if (!hasPhaseReady) {
-      addToast({
-        status: 'failed',
-        message: 'Distribution Not Ready',
-        detail: `Owner inactivity is ${elapsedDaysSinceActive} day(s); no phase is ready yet.`,
-      });
-      return;
-    }
-
+    if (!lastActive || lastActive === 0) { addToast({ status: 'failed', message: 'No activity recorded', detail: 'Perform a check-in or deposit first.' }); return; }
+    if (vault?.lastActive !== lastActive) setVault(p => p ? { ...p, lastActive } : p);
+    if (currentDistributions.length === 0) { addToast({ status: 'failed', message: 'No distributions configured', detail: 'Set up distribution phases first.' }); return; }
+    const elapsed = lastActive ? Math.floor((Date.now() - lastActive) / 86400000) : 0;
+    if (!currentDistributions.some((p: any) => Number(p.inactivityDays) <= elapsed)) { addToast({ status: 'failed', message: 'Not ready', detail: `${elapsed} day(s) elapsed; no phase triggered yet.` }); return; }
     setIsExecutingDistribution(true);
-    const toastId = addToast({
-      id: `dist-${Date.now()}`,
-      status: 'pending',
-      message: 'Executing Inactivity Distribution',
-      detail: 'Submitting contract distribution transaction...',
-    });
-
+    const toastId = addToast({ id: `dist-${Date.now()}`, status: 'pending', message: 'Executing distribution…', detail: 'Submitting contract transaction' });
     try {
       const wallet = selectedWallet || WalletType.FREIGHTER;
-      const result = await contractService.executeDistribution(publicKey, (xdr: string) =>
-        stellarService.signXDR(xdr, publicKey, wallet),
-      );
-
+      const result = await contractService.executeDistribution(publicKey, (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet));
       if (result.success) {
-        updateToast(toastId, {
-          status: 'success',
-          message: 'Distribution Executed',
-          detail: 'Funds have been distributed according to your phases',
-          hash: result.hash,
-        });
-
-        setHistory(prev => [{
-          id: Math.random().toString(36).substr(2, 9),
-          type: 'TRANSFER',
-          amount: 'AUTO-DISTRIBUTION',
-          status: 'SUCCESS',
-          timestamp: Date.now(),
-          hash: result.hash,
-        }, ...prev]);
-      } else {
-        updateToast(toastId, {
-          status: 'failed',
-          message: 'Distribution Failed',
-          detail: result.error || 'No eligible distribution was executed',
-        });
-      }
-    } catch (e: any) {
-      console.error('Distribution execution failed:', e);
-      updateToast(toastId, {
-        status: 'failed',
-        message: 'Distribution Error',
-        detail: e.message || 'An unexpected error occurred',
-      });
-    } finally {
-      setIsExecutingDistribution(false);
-    }
+        updateToast(toastId, { status: 'success', message: 'Distribution executed', detail: 'Funds distributed per your phases', hash: result.hash });
+        setHistory(p => [{ id: Math.random().toString(36).substr(2, 9), type: 'TRANSFER', amount: 'AUTO-DISTRIBUTION', status: 'SUCCESS', timestamp: Date.now(), hash: result.hash }, ...p]);
+      } else updateToast(toastId, { status: 'failed', message: 'Distribution failed', detail: result.error });
+    } catch (e: any) { updateToast(toastId, { status: 'failed', message: 'Distribution error', detail: e.message }); }
+    finally { setIsExecutingDistribution(false); }
   }, [publicKey, selectedWallet, addToast, currentDistributions, vault]);
 
   useEffect(() => {
-    if (!publicKey) {
-      autoDistributionTriggeredRef.current = false;
-      return;
-    }
-
-    if (!inactivityStatus?.isInactive) {
-      autoDistributionTriggeredRef.current = false;
-      return;
-    }
-
-    if (!vault || vault.lastActive === 0) {
-      autoDistributionTriggeredRef.current = false;
-      return;
-    }
-
-    if (autoDistributionTriggeredRef.current) return;
+    if (!publicKey || !inactivityStatus?.isInactive || !vault || vault.lastActive === 0 || autoDistributionTriggeredRef.current) return;
     autoDistributionTriggeredRef.current = true;
     handleExecuteDistribution();
   }, [publicKey, inactivityStatus?.isInactive, handleExecuteDistribution, vault]);
 
+  useEffect(() => { if (!publicKey) autoDistributionTriggeredRef.current = false; }, [publicKey]);
+
   const handleRefreshBalance = async () => {
     if (!publicKey) return;
     setIsRefreshing(true);
-    try {
-      const bal = await stellarService.getAccountBalance(publicKey);
-      setBalance(bal);
-    } catch (err) {
-      console.error("Refresh failed", err);
-    } finally {
-      setTimeout(() => setIsRefreshing(false), 500);
-    }
+    try { setBalance(await stellarService.getAccountBalance(publicKey)); }
+    catch (e) { console.error(e); }
+    finally { setTimeout(() => setIsRefreshing(false), 500); }
   };
 
-  const daysSinceActive = vault ? Math.floor((Date.now() - vault.lastActive) / (1000 * 60 * 60 * 24)) : 0;
-  const daysRemaining = vault && inactivityThresholdMs
-    ? Math.max(0, Math.floor((inactivityThresholdMs - (Date.now() - vault.lastActive)) / (1000 * 60 * 60 * 24)))
-    : null;
+  const daysSinceActive = vault ? Math.floor((Date.now() - vault.lastActive) / 86400000) : 0;
+  const daysRemaining = vault && inactivityThresholdMs ? Math.max(0, Math.floor((inactivityThresholdMs - (Date.now() - vault.lastActive)) / 86400000)) : null;
 
-  // Automatic inactivity reminders:
-  // - start when <= 5 days remaining
-  // - send once per day
-  // - reset reminder cycle after successful check-in (lastActive changes)
   useEffect(() => {
     if (!publicKey || daysRemaining === null || !vault) return;
-
     const cycleKey = STORAGE_KEYS.inactivityCycleLastActive(publicKey);
     const dailyKey = STORAGE_KEYS.inactivityDailyNotice(publicKey);
     const lastActive = Number(vault.lastActive || 0);
-    const storedCycleActive = Number(localStorage.getItem(cycleKey) || 0);
-
-    // Any new activity/check-in starts a fresh reminder cycle.
-    if (lastActive > storedCycleActive) {
-      localStorage.setItem(cycleKey, String(lastActive));
-      localStorage.removeItem(dailyKey);
-    }
-
-    // Notify only in the warning window.
+    const stored = Number(localStorage.getItem(cycleKey) || 0);
+    if (lastActive > stored) { localStorage.setItem(cycleKey, String(lastActive)); localStorage.removeItem(dailyKey); }
     if (daysRemaining > 5 || daysRemaining < 0) return;
-
     const todayKey = getLocalDateKey();
-    const lastNotifiedDay = localStorage.getItem(dailyKey);
-    if (lastNotifiedDay === todayKey) return;
-
-    addToast({
-      status: 'pending',
-      message: 'Inactivity Reminder',
-      detail:
-        daysRemaining === 0
-          ? 'Your inactivity timer has reached 0 days. Check in now.'
-          : `Only ${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining. Check in to reset your timer.`,
-      autoHideDelay: 8000,
-    });
-
-    // Best-effort browser notification (if allowed).
+    if (localStorage.getItem(dailyKey) === todayKey) return;
+    addToast({ status: 'pending', message: 'Inactivity reminder', detail: daysRemaining === 0 ? 'Timer at 0 days. Check in now.' : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining.`, autoHideDelay: 8000 });
     if (typeof window !== 'undefined' && 'Notification' in window) {
-      const showBrowserNotification = () => {
-        try {
-          new Notification('Continuum Inactivity Reminder', {
-            body:
-              daysRemaining === 0
-                ? 'Your inactivity timer has reached 0 days. Open Continuum and check in.'
-                : `You have ${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining. Check in to stay active.`,
-          });
-        } catch (err) {
-          console.warn('[Reminder] Browser notification failed:', err);
-        }
-      };
-
-      if (Notification.permission === 'granted') {
-        showBrowserNotification();
-      } else if (Notification.permission === 'default') {
-        Notification.requestPermission()
-          .then((permission) => {
-            if (permission === 'granted') showBrowserNotification();
-          })
-          .catch(() => {});
-      }
+      const show = () => { try { new Notification('Continuum', { body: daysRemaining === 0 ? 'Timer at 0 days.' : `${daysRemaining} days remaining.` }); } catch { } };
+      if (Notification.permission === 'granted') show();
+      else if (Notification.permission === 'default') Notification.requestPermission().then(p => { if (p === 'granted') show(); }).catch(() => {});
     }
-
-    // Best-effort backend ping (currently mock endpoint).
-    fetch('/api/notify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: publicKey, // placeholder identifier until user email profile exists
-        type: 'inactivity_warning',
-        message:
-          daysRemaining === 0
-            ? 'Inactivity timer reached 0 days. Check in immediately.'
-            : `${daysRemaining} day(s) remaining in inactivity timer.`,
-      }),
-    }).catch(() => {});
-
+    fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: publicKey, type: 'inactivity_warning', message: `${daysRemaining} day(s) remaining.` }) }).catch(() => {});
     localStorage.setItem(dailyKey, todayKey);
   }, [publicKey, vault, daysRemaining, addToast]);
 
-  const fadeUp = {
-    hidden: { opacity: 0, y: 24 },
-    show: { opacity: 1, y: 0 }
-  };
-  const staggerContainer = {
-    hidden: {},
-    show: { transition: { staggerChildren: 0.12, delayChildren: 0.08 } }
-  };
-
+  /* ── LANDING PAGE ─────────────────────────────────────────────── */
   if (!publicKey) {
     return (
-      <div className="min-h-screen bg-[#09090B] text-white flex flex-col font-sans selection:bg-blue-500/30">
-        {/* Navigation */}
-        <nav className="px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between border-b border-white/5">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 bg-blue-500/15 border border-blue-500/30 rounded-lg flex items-center justify-center">
-              <Shield className="w-5 h-5 text-blue-400" />
+      <div className="min-h-screen" style={{ background: 'var(--paper)', color: 'var(--cream)', fontFamily: 'var(--font-body)' }}>
+
+        {/* Nav */}
+        <nav style={{ borderBottom: '1px solid var(--border)', padding: '0 2rem', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50, background: 'rgba(19,18,15,0.9)', backdropFilter: 'blur(12px)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: 32, height: 32, background: 'var(--gold)', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Shield size={16} color="var(--ink)" strokeWidth={2.5} />
             </div>
-            <span className="font-bold tracking-tight text-xl sm:text-2xl text-white truncate">CONTINUUM</span>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', letterSpacing: '-0.01em' }}>Continuum</span>
           </div>
-          <div className="hidden md:flex items-center gap-8 text-xs font-semibold uppercase tracking-wider text-gray-400">
-            <a href="#features" className="hover:text-blue-400 transition-colors duration-300">Features</a>
-            <a href="#how" className="hover:text-blue-400 transition-colors duration-300">How it works</a>
-            <a href="#why" className="hover:text-blue-400 transition-colors duration-300">Why Continuum</a>
-            <button 
-              onClick={handleConnect}
-              disabled={isConnecting}
-              className="px-5 py-2.5 btn-primary text-sm"
-            >
-              {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+            <div className="hidden md:flex" style={{ gap: '2rem' }}>
+              {['Features', 'How it works', 'Why'].map(l => (
+                <a key={l} href={`#${l.toLowerCase().replace(/\s/g,'-')}`} className="label-caps" style={{ color: 'var(--ash)', textDecoration: 'none', transition: 'color 0.2s' }} onMouseEnter={e => (e.currentTarget.style.color = 'var(--gold)')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--ash)')}>{l}</a>
+              ))}
+            </div>
+            <button onClick={handleConnect} disabled={isConnecting} className="btn-primary" style={{ padding: '0.5rem 1.25rem' }}>
+              {isConnecting ? <RefreshCw size={14} className="animate-spin" /> : null}
+              {isConnecting ? 'Connecting…' : 'Connect Wallet'}
             </button>
           </div>
-          <button
-            onClick={handleConnect}
-            disabled={isConnecting}
-            className="md:hidden px-4 py-2 btn-primary text-xs sm:text-sm"
-          >
-            {isConnecting ? 'Connecting...' : 'Connect'}
-          </button>
         </nav>
 
-        {/* Hero Section */}
-        <main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 lg:px-8 py-16 sm:py-20 relative overflow-hidden">
+        {/* Hero */}
+        <section style={{ position: 'relative', overflow: 'hidden', padding: '6rem 2rem 4rem', maxWidth: 1100, margin: '0 auto' }}>
           <div className="hero-grid-bg" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(800px,120vw)] h-[min(800px,120vw)] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
-          
-          <motion.div
-            initial="hidden"
-            animate="show"
-            variants={staggerContainer}
-            className="w-full max-w-6xl relative z-10"
-          >
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
-              <div className="lg:col-span-7">
-                <motion.div variants={fadeUp} transition={{ duration: 0.45 }} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 mb-8">
-                  <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
-                  <span className="text-xs font-bold uppercase tracking-widest text-blue-300">Smart Contract Protocol</span>
-                </motion.div>
-                <motion.h1 variants={fadeUp} transition={{ duration: 0.45, delay: 0.05 }} className="text-5xl sm:text-6xl md:text-7xl xl:text-8xl font-black tracking-tight mb-8 leading-[0.95] text-white">
-                  Inheritance
-                  <br />
-                  for Self-Custody.
-                </motion.h1>
-                <motion.p variants={fadeUp} transition={{ duration: 0.45, delay: 0.1 }} className="text-lg md:text-xl text-gray-300 mb-10 font-light tracking-wide leading-relaxed max-w-2xl">
-                  Continuum turns wallet activity into programmable legacy execution, without giving custody to a third party.
-                </motion.p>
-                <motion.div variants={fadeUp} transition={{ duration: 0.45, delay: 0.15 }} className="flex flex-col sm:flex-row items-start gap-4">
-                  <button
-                    onClick={handleConnect}
-                    disabled={isConnecting}
-                    className="w-full sm:w-auto px-8 py-4 btn-primary text-base font-bold flex items-center justify-center gap-3 tracking-wider uppercase"
-                  >
-                    {isConnecting ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Wallet className="w-5 h-5" />}
-                    Launch App
-                  </button>
-                  <div className="text-xs text-zinc-400 uppercase tracking-[0.2em] mt-2 sm:mt-0 sm:self-center">
-                    Non-custodial · On Stellar · Verifiable
-                  </div>
-                </motion.div>
-              </div>
-              <motion.div variants={fadeUp} transition={{ duration: 0.45, delay: 0.2 }} className="lg:col-span-5">
-                <div className="glass-card p-6 md:p-8 relative overflow-hidden">
-                  <div className="protocol-orbit absolute inset-0" />
-                  <div className="relative z-10 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-300">Protocol Flow</span>
-                      <span className="text-[10px] font-mono text-zinc-500">LIVE MODEL</span>
-                    </div>
-                    {[
-                      { icon: Activity, title: 'Heartbeat Verified', subtitle: 'Owner wallet activity detected', tone: 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10' },
-                      { icon: Clock, title: 'Inactivity Countdown', subtitle: 'Trigger windows tracked on schedule', tone: 'text-blue-300 border-blue-500/30 bg-blue-500/10' },
-                      { icon: ArrowRightLeft, title: 'Distribution Ready', subtitle: 'Nominee phases queued for release', tone: 'text-purple-300 border-purple-500/30 bg-purple-500/10' }
-                    ].map((item, i) => {
-                      const RowIcon = item.icon;
-                      return (
-                        <div key={i} className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 flex items-start gap-3">
-                          <div className={`w-9 h-9 rounded-lg border flex items-center justify-center ${item.tone}`}>
-                            <RowIcon className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <div className="text-sm font-semibold">{item.title}</div>
-                            <div className="text-xs text-zinc-400 mt-1">{item.subtitle}</div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </motion.div>
+          <div style={{ position: 'absolute', top: '20%', right: '-10%', width: 400, height: 400, background: 'radial-gradient(circle, rgba(214,175,100,0.06) 0%, transparent 70%)', pointerEvents: 'none' }} />
+
+          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}>
+            <div className="label-gold" style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ display: 'inline-block', width: 20, height: 1, background: 'var(--gold-dim)' }} />
+              On-Chain Inheritance Protocol · Stellar Testnet
             </div>
           </motion.div>
 
-          {/* Features Grid */}
-          <motion.div
-            initial="hidden"
-            whileInView="show"
-            viewport={{ once: true, amount: 0.2 }}
-            variants={staggerContainer}
-            className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 max-w-6xl w-full mt-20 sm:mt-28 relative z-10"
-            id="features"
-          >
-            {[
-              {
-                title: "Smart Inactivity Detection",
-                desc: "Programmable triggers that monitor your on-chain pulse without compromising privacy.",
-                icon: Activity,
-                color: "blue"
-              },
-              {
-                title: "Automated Distribution",
-                desc: "Seamlessly transition assets to beneficiaries via Soroban smart contracts.",
-                icon: Cpu,
-                color: "emerald"
-              },
-              {
-                title: "Institutional Security",
-                desc: "Built on Stellar's robust infrastructure with multi-sig and time-lock capabilities.",
-                icon: Shield,
-                color: "slate"
-              }
-            ].map((feature, i) => {
-              const colorMap = {
-                blue: { bg: 'bg-blue-500/10', border: 'border-blue-500/20', icon: 'text-blue-400', title: 'text-blue-300' },
-                emerald: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', icon: 'text-emerald-400', title: 'text-emerald-300' },
-                slate: { bg: 'bg-slate-500/10', border: 'border-slate-500/20', icon: 'text-slate-400', title: 'text-slate-300' }
-              };
-              const colors = colorMap[feature.color];
-              return (
-                <motion.div key={i} variants={fadeUp} transition={{ duration: 0.4 }} className={`glass-card p-8 group border ${colors.border} ${colors.bg}`}>
-                  <div className={`w-12 h-12 rounded-lg ${colors.bg} border ${colors.border} flex items-center justify-center mb-6 group-hover:shadow-lg transition-all`}>
-                    <feature.icon className={`w-6 h-6 ${colors.icon} group-hover:scale-110 transition-transform`} />
-                  </div>
-                  <h3 className={`text-lg font-bold mb-3 ${colors.title}`}>{feature.title}</h3>
-                  <p className="text-gray-300 text-sm leading-relaxed">{feature.desc}</p>
-                </motion.div>
-              );
-            })}
-          </motion.div>
-
-          {/* Protocol Positioning Section */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="max-w-6xl w-full mt-24 relative z-10"
-            id="why"
-          >
-            <div className="section-eyebrow">Core Thesis</div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="glass-card p-6 md:col-span-2">
-                <h2 className="text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-4">
-                  Your Crypto Shouldn't
-                  <br />
-                  <span className="text-gradient">Disappear With Lost Keys.</span>
-                </h2>
-                <p className="text-zinc-300 leading-relaxed max-w-2xl">
-                  Continuum introduces a programmable life-signal layer. If activity stops, your pre-defined release phases execute exactly as configured.
-                </p>
-              </div>
-              <div className="glass-card p-6">
-                <div className="micro-label mb-4">Why teams choose Continuum</div>
-                <div className="space-y-4 text-sm text-zinc-300">
-                  <div className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5" />Audit-friendly on-chain logic</div>
-                  <div className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5" />No custodial key escrow model</div>
-                  <div className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5" />Configurable staged distribution</div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Problem & Solution Sections */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-            className="max-w-6xl w-full mt-20 relative z-10"
-            id="problem"
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center mb-24">
-              <div>
-                <div className="inline-block px-4 py-2 rounded-full bg-red-500/10 border border-red-500/20 mb-6">
-                  <span className="text-red-400 text-sm font-bold uppercase tracking-wider">Problem</span>
-                </div>
-                <h3 className="text-4xl font-bold mb-6 leading-tight">Crypto Inheritance is Broken</h3>
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-1" />
-                    <div>
-                      <div className="font-semibold mb-1">People lose access to wallets</div>
-                      <div className="text-sm text-zinc-400">No way to recover assets if something happens</div>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-1" />
-                    <div>
-                      <div className="font-semibold mb-1">No inheritance in crypto</div>
-                      <div className="text-sm text-zinc-400">Traditional estate planning doesn't work</div>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-1" />
-                    <div>
-                      <div className="font-semibold mb-1">Funds get locked forever</div>
-                      <div className="text-sm text-zinc-400">Assets become permanently inaccessible</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="relative h-80">
-                <div className="absolute inset-0 bg-gradient-to-br from-red-500/20 to-transparent rounded-2xl blur-xl" />
-                <div className="absolute inset-0 glass-card flex items-center justify-center">
-                  <Lock className="w-24 h-24 text-red-500/30" />
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-              <div className="relative h-80 order-2 md:order-1">
-                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/20 to-transparent rounded-2xl blur-xl" />
-                <div className="absolute inset-0 glass-card flex items-center justify-center">
-                  <CheckCircle2 className="w-24 h-24 text-emerald-500/30" />
-                </div>
-              </div>
-              <div className="order-1 md:order-2">
-                <div className="inline-block px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 mb-6">
-                  <span className="text-emerald-400 text-sm font-bold uppercase tracking-wider">Solution</span>
-                </div>
-                <h3 className="text-4xl font-bold mb-6 leading-tight">Smart Legacy Management</h3>
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-1" />
-                    <div>
-                      <div className="font-semibold mb-1">Proof-of-Life system</div>
-                      <div className="text-sm text-zinc-400">Regular check-ins prove you're active</div>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-1" />
-                    <div>
-                      <div className="font-semibold mb-1">Smart contract inheritance</div>
-                      <div className="text-sm text-zinc-400">Automated transfers when inactive</div>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-1" />
-                    <div>
-                      <div className="font-semibold mb-1">Automated distribution</div>
-                      <div className="text-sm text-zinc-400">Assets go to your chosen beneficiaries</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* How It Works Section */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.6 }}
-            className="max-w-6xl w-full mt-28 relative z-10"
-            id="how"
-          >
-            <div className="text-center mb-12">
-              <div className="inline-block px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 mb-4">
-                <span className="text-blue-400 text-sm font-bold uppercase tracking-wider">How It Works</span>
-              </div>
-              <h2 className="text-4xl font-bold mb-2">4 Simple Steps</h2>
-            </div>
-            <motion.div
-              initial="hidden"
-              whileInView="show"
-              viewport={{ once: true, amount: 0.25 }}
-              variants={staggerContainer}
-              className="grid grid-cols-1 md:grid-cols-4 gap-6"
-            >
-              {[
-                { step: "1", title: "Connect Wallet", desc: "Link your Stellar wallet securely", icon: Wallet },
-                { step: "2", title: "Set Beneficiaries", desc: "Choose who receives your assets", icon: Users },
-                { step: "3", title: "Stay Active", desc: "Regular check-ins keep funds secure", icon: Activity },
-                { step: "4", title: "Auto Distribution", desc: "Assets transfer if you go inactive", icon: CheckCircle2 }
-              ].map((item, i) => {
-                const StepIcon = item.icon;
-                return (
-                <motion.div key={i} variants={fadeUp} transition={{ duration: 0.4 }} className="glass-card p-6">
-                  <div className="w-12 h-12 rounded-lg bg-blue-500/20 flex items-center justify-center mb-4 relative">
-                    <StepIcon className="w-5 h-5 text-blue-300" />
-                    <span className="absolute -right-2 -top-2 w-5 h-5 rounded-full bg-[#09090B] border border-blue-500/40 text-[10px] font-bold text-blue-300 flex items-center justify-center">{item.step}</span>
-                  </div>
-                  <h4 className="font-bold mb-2">{item.title}</h4>
-                  <p className="text-sm text-zinc-400">{item.desc}</p>
-                </motion.div>
-              )})}
-            </motion.div>
-          </motion.div>
-
-          {/* Final CTA */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.8 }}
-            className="max-w-3xl w-full mt-32 text-center relative z-10"
-          >
-            <div className="glass-card p-12 border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-transparent">
-              <h3 className="text-4xl font-bold mb-4">Start Securing Your Legacy Today</h3>
-              <p className="text-lg text-zinc-300 mb-8">Join thousands protecting their digital assets</p>
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <button 
-                  onClick={handleConnect}
-                  disabled={isConnecting}
-                  className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition-all"
-                >
-                  {isConnecting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
-                  Launch App
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4rem', alignItems: 'center' }} className="lg:grid-cols-2">
+            <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}>
+              <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(3rem, 6vw, 5.5rem)', lineHeight: 0.95, letterSpacing: '-0.02em', marginBottom: '1.5rem', color: 'var(--cream)' }}>
+                Your assets<br />
+                <em style={{ color: 'var(--gold)', fontStyle: 'italic' }}>outlive</em><br />
+                your keys.
+              </h1>
+              <p style={{ color: 'var(--ash)', fontSize: '1.0625rem', lineHeight: 1.7, maxWidth: 480, marginBottom: '2.5rem' }}>
+                Continuum is a programmable inheritance layer built on Stellar. If your wallet goes quiet, your pre-configured release phases execute — automatically, on-chain, without a middleman.
+              </p>
+              <div style={{ display: 'flex', gap: '0.875rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <button onClick={handleConnect} disabled={isConnecting} className="btn-primary">
+                  {isConnecting ? <RefreshCw size={14} className="animate-spin" /> : <Wallet size={14} />}
+                  {isConnecting ? 'Connecting…' : 'Open the Vault'}
                 </button>
+                <span className="label-caps" style={{ color: 'var(--smoke)' }}>Non-custodial · Verifiable · Open source</span>
               </div>
-            </div>
-          </motion.div>
-        </main>
-
-        {/* Footer */}
-        <footer className="px-4 sm:px-6 lg:px-8 py-10 sm:py-12 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6 sm:gap-8 text-zinc-500 text-sm">
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4" />
-            <span className="font-semibold text-white">Continuum</span>
-            <span className="mx-2">© 2026</span>
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-8">
-            <a href="#" className="hover:text-white transition-colors">Documentation</a>
-            <a href="#" className="hover:text-white transition-colors">Audit Report</a>
-            <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
-          </div>
-        </footer>
-
-        {/* Error Toast */}
-        <AnimatePresence>
-          {error && (
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              className="fixed bottom-4 right-4 sm:bottom-8 sm:right-8 z-50 glass-card p-4 flex items-center gap-4 bg-red-500/10 border-red-500/20 max-w-[calc(100vw-2rem)] sm:max-w-md"
-            >
-              <AlertTriangle className="w-5 h-5 text-red-500" />
-              <div className="text-sm min-w-0">
-                <span className="font-bold block">Connection Error</span>
-                <span className="text-zinc-400 break-words">{error}</span>
-              </div>
-              <button onClick={() => setError(null)} className="p-1 hover:bg-white/5 rounded">
-                <X className="w-4 h-4 text-zinc-500" />
-              </button>
             </motion.div>
-          )}
-        </AnimatePresence>
 
-        {/* Wallet Selection Modal */}
-        <AnimatePresence>
-          {showWalletModal && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-              <motion.div 
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                onClick={() => setShowWalletModal(false)}
-                className="absolute inset-0 bg-black/60 backdrop-blur-md"
-              />
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="relative z-10 w-full max-w-md glass-card p-6 sm:p-10 shadow-2xl"
-              >
-                <div className="flex items-center justify-between mb-8">
-                  <h2 className="text-2xl font-bold tracking-tight">Connect Wallet</h2>
-                  <button onClick={() => setShowWalletModal(false)} className="p-2 hover:bg-white/5 rounded-full transition-colors">
-                    <X className="w-6 h-6 text-zinc-500" />
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  <button 
-                    onClick={() => connectToWallet(WalletType.FREIGHTER)}
-                    className="w-full p-6 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4 hover:bg-white/10 hover:border-blue-500/30 transition-all group text-left"
-                  >
-                    <div className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20 group-hover:bg-blue-500/20 transition-colors">
-                      <Shield className="w-6 h-6 text-blue-500" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-lg">Freighter</div>
-                      <div className="text-xs text-zinc-500">Native Stellar Wallet</div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-zinc-700 ml-auto group-hover:text-white transition-colors" />
-                  </button>
-
-                  <button 
-                    onClick={() => connectToWallet(WalletType.METAMASK)}
-                    className="w-full p-6 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4 hover:bg-white/10 hover:border-orange-500/30 transition-all group text-left"
-                  >
-                    <div className="w-12 h-12 bg-orange-500/10 rounded-xl flex items-center justify-center border border-orange-500/20 group-hover:bg-orange-500/20 transition-colors">
-                      <Cpu className="w-6 h-6 text-orange-500" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-lg">MetaMask</div>
-                      <div className="text-xs text-zinc-500">Via Stellar Snap</div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-zinc-700 ml-auto group-hover:text-white transition-colors" />
-                  </button>
-                </div>
-
-                <p className="mt-8 text-center text-xs text-zinc-600 leading-relaxed">
-                  By connecting your wallet, you agree to our Terms of Service and Privacy Policy.
-                </p>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-[#09090B] text-white font-sans selection:bg-blue-500/30">
-      {/* Header */}
-      <header className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
-              <Shield className="w-5 h-5 text-black" />
-            </div>
-            <span className="font-bold tracking-tight text-xl">Continuum</span>
-          </div>
-          <div className="flex items-center gap-4 sm:gap-6 min-w-0">
-            <div className="hidden sm:flex items-center gap-3 px-4 py-2 bg-white/5 rounded-full border border-white/10">
-              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_8px_#10b981]" />
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-zinc-400">{publicKey.slice(0, 6)}...{publicKey.slice(-6)}</span>
-                {selectedWallet && (
-                  <span className="px-1.5 py-0.5 bg-white/10 border border-white/10 rounded text-[9px] text-zinc-300 font-bold uppercase tracking-tighter">
-                    {selectedWallet}
-                  </span>
-                )}
-              </div>
-            </div>
-            <button 
-              onClick={handleDisconnect} 
-              className="text-xs font-semibold text-zinc-500 hover:text-white transition-colors uppercase tracking-wider"
-            >
-              Disconnect
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* Main Panel */}
-          <div className="lg:col-span-8 space-y-8">
-            
-            {/* Status Panel */}
-            <div className="glass-card p-6 sm:p-10 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-8 opacity-[0.02] group-hover:opacity-[0.05] transition-opacity">
-                <Shield className="w-64 h-64" />
-              </div>
-              
-              <div className="relative z-10">
-                <div className="flex items-center gap-3 mb-8">
-                  <div className="px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full text-[10px] font-bold text-blue-400 uppercase tracking-widest">
-                    Protocol Active
-                  </div>
-                  <div className="text-[10px] font-mono text-zinc-600">ID: CTN-992-X</div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-16">
-                  <div>
-                    <h1 className="text-4xl sm:text-5xl font-bold tracking-tight mb-6 leading-[1.1]">
-                      Your Legacy <br /> is Secured.
-                    </h1>
-                    <p className="text-zinc-400 text-sm leading-relaxed mb-10">
-                      Continuum is monitoring your Stellar account. Your digital assets are programmed for automated transition upon inactivity.
-                    </p>
-                    <div className="flex flex-wrap gap-4">
-                      <button 
-                        onClick={handleCheckIn}
-                        disabled={isCheckingIn}
-                        className="px-8 py-4 btn-primary flex items-center gap-3"
-                      >
-                        {isCheckingIn ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Heart className="w-5 h-5" />}
-                        Check In
-                      </button>
-                      <button 
-                        onClick={handleResetActivity}
-                        disabled={isResetting}
-                        className="px-8 py-4 btn-secondary flex items-center gap-3"
-                      >
-                        {isResetting ? <RefreshCw className="w-5 h-5 animate-spin" /> : <RotateCcw className="w-5 h-5" />}
-                        Reset Activity
-                      </button>
-                      <button 
-                        onClick={() => setShowSendModal(true)}
-                        className="px-8 py-4 btn-secondary flex items-center gap-3"
-                      >
-                        <ArrowUpRight className="w-5 h-5" />
-                        Transfer
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col items-center justify-center border-t md:border-t-0 border-white/5 pt-10 md:pt-0 md:border-l md:pl-16">
-                    <div className="text-center">
-                      <div className="micro-label mb-4">Inactivity Trigger</div>
-                      <div className="text-6xl sm:text-8xl font-bold tracking-tighter mb-2">{daysRemaining ?? '--'}</div>
-                      <div className="text-xs font-medium text-zinc-500 uppercase tracking-[0.2em]">
-                        {daysRemaining === null ? 'Set inactivity days to activate' : 'Days Remaining'}
+            <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.65, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}>
+              <div className="protocol-card">
+                <div className="label-gold" style={{ marginBottom: '1.25rem' }}>Protocol state · live model</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {[
+                    { icon: Activity, label: 'Heartbeat Verified', sub: 'Wallet activity detected on-chain', color: '#4ade80' },
+                    { icon: Clock, label: 'Inactivity Countdown', sub: 'Trigger windows tracked per phase', color: 'var(--gold)' },
+                    { icon: ArrowRightLeft, label: 'Distribution Ready', sub: 'Nominee phases queued for release', color: 'var(--amber)' },
+                  ].map((item, i) => (
+                    <div key={i} style={{ display: 'flex', gap: '0.875rem', alignItems: 'flex-start', padding: '0.875rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 2 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 2, background: `${item.color}12`, border: `1px solid ${item.color}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <item.icon size={15} color={item.color} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--cream)', marginBottom: 2 }}>{item.label}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--ash)' }}>{item.sub}</div>
                       </div>
                     </div>
-                  </div>
+                  ))}
                 </div>
               </div>
-            </div>
-
-            {/* Matrix Section */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <WalletBalance userAddress={publicKey} pollInterval={5000} />
-
-              <div className="glass-card p-8">
-                <div className="flex items-center justify-between mb-8">
-                  <div className="micro-label">Beneficiary Load</div>
-                  <Users className="w-4 h-4 text-zinc-600" />
-                </div>
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div className="text-4xl font-bold tracking-tight">{currentNominees.length}</div>
-                    <div className="flex -space-x-3">
-                      {[1, 2].map(i => (
-                        <div key={i} className="w-10 h-10 rounded-full bg-zinc-800 border-4 border-[#121217] flex items-center justify-center">
-                          <Users className="w-4 h-4 text-zinc-500" />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="text-xs font-medium text-zinc-500 uppercase tracking-widest">Allocation: 100%</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Inactivity Status Section */}
-            {inactivityStatus && inactivityThresholdMs && (
-              <>
-                <InactivityStatus status={inactivityStatus} threshold={inactivityThresholdMs} />
-                {inactivityStatus.isInactive && publicKey && (
-                  <div className="mt-4 flex justify-end">
-                    <button
-                      onClick={handleExecuteDistribution}
-                      disabled={isExecutingDistribution}
-                      className="px-6 py-3 btn-primary flex items-center gap-2"
-                    >
-                      {isExecutingDistribution ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ArrowRightLeft className="w-5 h-5" />}
-                      {isExecutingDistribution ? 'Executing Distribution' : 'Execute Distribution'}
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Nominees & Distribution Section */}
-            <Nominees
-              initialNominees={currentNominees}
-              locked={isNomineesLocked}
-              onSave={async (nominees) => {
-                if (!publicKey) return;
-                const wallet = selectedWallet || WalletType.FREIGHTER;
-
-                setStagedNominees((prev) => ({ ...prev, [publicKey]: nominees }));
-                localStorage.setItem(STORAGE_KEYS.nominees(publicKey), JSON.stringify(nominees));
-
-                const onChainNominees = nominees.map((n: any) => ({
-                  address: n.address,
-                  role: roleIdToSymbol(String(n.role || "beneficiary")),
-                  bps: Math.round((parseFloat(n.percentage) || 0) * 100),
-                }));
-
-                const res = await contractService.setNominees(
-                  publicKey,
-                  onChainNominees,
-                  (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet),
-                );
-
-                if (res.success) {
-                  addToast({
-                    status: 'success',
-                    title: 'Nominees Saved On-Chain',
-                    description: `${nominees.length} nominees stored in contract`,
-                  });
-                } else {
-                  addToast({
-                    status: 'failed',
-                    message: 'On-chain save failed',
-                    detail: res.error || 'Could not save nominees to contract',
-                  });
-                }
-              }}
-            />
-
-            {/* Staged Release Timeline + Configured Schedule */}
-            <div className="space-y-8">
-              <StagedReleaseTimeline
-                initialStages={currentTimeline}
-                locked={isTimelineLocked}
-                onSave={(stages) => {
-                if (publicKey) {
-                  setStagedTimeline(prev => ({ ...prev, [publicKey]: stages }));
-                  localStorage.setItem(STORAGE_KEYS.timeline(publicKey), JSON.stringify(stages));
-                  console.log('Timeline saved for', publicKey, ':', stages);
-                  const wallet = selectedWallet || WalletType.FREIGHTER;
-                  contractService
-                    .setTimeline(
-                      publicKey,
-                      stages.map((s: any) => ({
-                        when: Math.floor(new Date(s.date).getTime() / 1000),
-                        // Contract stores `amount` as integer stroops.
-                        amount: xlmToStroopsString(String(s.amount || "0")),
-                        memo: s.description && String(s.description).trim()
-                          ? String(s.description)
-                              .trim()
-                              .toUpperCase()
-                              .replace(/[^A-Z0-9_]/g, '')
-                              .slice(0, 12)
-                          : "NONE",
-                      })),
-                      (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet),
-                    )
-                    .then((res) => {
-                      if (res.success) {
-                        addToast({
-                          status: 'success',
-                          title: 'Timeline Saved On-Chain',
-                          description: `${stages.length} stages stored in contract`,
-                        });
-                      } else {
-                        addToast({
-                          status: 'failed',
-                          message: 'On-chain save failed',
-                          detail: res.error || 'Could not save timeline to contract',
-                        });
-                      }
-                    });
-                }
-              }} />
-
-            </div>
-
-            {/* Inactivity Distribution + Configured Phases */}
-            <div className="space-y-8">
-              <div className="space-y-3">
-                <InactivityDistribution 
-                  nominees={currentNominees}
-                  initialPhases={currentDistributions}
-                  locked={isDistributionsLocked}
-                  onSave={(distributions) => {
-                    if (publicKey) {
-                      setStagedDistributions(prev => ({ ...prev, [publicKey]: distributions }));
-                      localStorage.setItem(STORAGE_KEYS.distributions(publicKey), JSON.stringify(distributions));
-                      const minDays = Math.min(...distributions.map((phase: any) => phase.inactivityDays));
-                      setVault(prev => prev ? { ...prev, threshold: minDays * 24 * 60 * 60 * 1000 } : prev);
-                      console.log('Distributions saved for', publicKey, ':', distributions);
-
-                      const wallet = selectedWallet || WalletType.FREIGHTER;
-                      contractService
-                        .setDistributions(
-                          publicKey,
-                          distributions.map((p: any) => ({
-                            inactivity_days: Number(p.inactivityDays),
-                            entries: Object.entries(p.distributions || {})
-                              .map(([nomineeId, pct]) => {
-                                const nominee = currentNominees.find((n: any) => n.id === nomineeId);
-                                if (!nominee) return null;
-
-                                const bps = Math.round((parseFloat(String(pct)) || 0) * 100);
-                                if (bps <= 0) return null;
-
-                                return {
-                                  address: nominee.address,
-                                  bps,
-                                };
-                              })
-                              .filter(Boolean),
-                          })),
-                          (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet),
-                        )
-                        .then((res) => {
-                          if (res.success) {
-                            addToast({
-                              status: 'success',
-                              title: 'Distribution Saved On-Chain',
-                              description: `${distributions.length} phases stored in contract`,
-                            });
-                          } else {
-                            addToast({
-                              status: 'failed',
-                              message: 'On-chain save failed',
-                              detail: res.error || 'Could not save distributions to contract',
-                            });
-                          }
-                        });
-                    }
-                  }}
-                />
-                <p className="text-xs text-zinc-500 px-1">
-                  Earliest configured inactivity phase is used as the inactivity trigger.
-                </p>
-              </div>
-
-            </div>
-
+            </motion.div>
           </div>
+        </section>
 
-          {/* Sidebar */}
-          <div className="lg:col-span-4 space-y-8">
-            <div className="glass-card p-8">
-              <div className="flex items-center justify-between mb-6">
-                <div className="micro-label">Connected Account</div>
-                {selectedWallet && (
-                  <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] text-zinc-400 font-bold uppercase tracking-tighter">
-                    {selectedWallet}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-4">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${
-                  selectedWallet === WalletType.METAMASK 
-                    ? 'bg-orange-500/10 border-orange-500/20' 
-                    : 'bg-emerald-500/10 border-emerald-500/20'
-                }`}>
-                  {selectedWallet === WalletType.METAMASK ? (
-                    <Cpu className="w-5 h-5 text-orange-500" />
-                  ) : (
-                    <Wallet className="w-5 h-5 text-emerald-500" />
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-bold truncate">{publicKey}</div>
-                  <div className="text-[10px] text-zinc-500 font-medium uppercase tracking-widest mt-0.5">
-                    {selectedWallet === WalletType.METAMASK ? 'MetaMask Stellar Snap' : 'Stellar Network Node'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="glass-card p-8">
-              <div className="micro-label mb-4">Vault Deposit</div>
-              <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
-                Auto-distribution only works for funds deposited into the contract vault.
-              </p>
-              <div className="flex items-center justify-between text-xs mb-4">
-                <span className="text-zinc-500">Vault Balance</span>
-                <span className="text-zinc-300 font-mono">{stroopsToXlmString(vaultBalanceStroops)} XLM</span>
-              </div>
-              <div className="flex gap-3">
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={depositXlm}
-                  onChange={(e) => setDepositXlm(e.target.value)}
-                  placeholder="Amount (XLM)"
-                  className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500/50"
-                />
-                <button
-                  onClick={handleDeposit}
-                  disabled={isDepositing || !depositXlm.trim()}
-                  className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold transition-colors disabled:opacity-50"
-                >
-                  {isDepositing ? 'Depositing...' : 'Deposit'}
-                </button>
-              </div>
-            </div>
-
-            <div className="glass-card p-8">
-              <div className="micro-label mb-8">Protocol Health</div>
-              <div className="space-y-5">
-                {[
-                  { label: "Soroban Runtime", status: "Operational", color: "text-emerald-500" },
-                  { label: "Inactivity Clock", status: "Synced", color: "text-emerald-500" },
-                  { label: "Distribution Key", status: "Encrypted", color: "text-blue-500" },
-                  { label: "Network Latency", status: "12ms", color: "text-zinc-500" },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs font-medium">
-                    <span className="text-zinc-500">{item.label}</span>
-                    <span className={item.color}>{item.status}</span>
+        {/* Problem / Solution */}
+        <section id="Why" style={{ padding: '5rem 2rem', maxWidth: 1100, margin: '0 auto' }}>
+          <div className="ornament" style={{ marginBottom: '3rem' }}>
+            <span className="label-caps">The Problem</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3rem' }}>
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(2rem, 4vw, 3rem)', letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: '1.5rem' }}>
+                Crypto assets disappear<br />
+                <em style={{ color: 'var(--ash)', fontStyle: 'italic' }}>with their owners.</em>
+              </h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {['No inheritance mechanism exists for self-custody wallets.', 'Lost keys mean permanently inaccessible funds.', 'Traditional estate planning cannot touch on-chain assets.'].map((t, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                    <AlertTriangle size={15} color="#f87171" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span style={{ fontSize: '0.9375rem', color: 'var(--ash)', lineHeight: 1.6 }}>{t}</span>
                   </div>
                 ))}
               </div>
             </div>
-
-            <div className="glass-card p-8">
-              <div className="flex items-center justify-between mb-8">
-                <div className="micro-label">Activity Log</div>
-                <History className="w-4 h-4 text-zinc-600" />
-              </div>
-              <div className="space-y-6 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                {history.length === 0 ? (
-                  <div className="text-center py-12 text-zinc-600 text-xs italic">
-                    No recent activity recorded.
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(2rem, 4vw, 3rem)', letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: '1.5rem' }}>
+                Continuum makes your<br />
+                <em style={{ color: 'var(--gold)', fontStyle: 'italic' }}>intentions permanent.</em>
+              </h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {['Proof-of-life check-ins keep your vault active.', 'Inactivity triggers automated phased distribution.', 'Smart contracts enforce your will — no lawyers needed.'].map((t, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                    <CheckCircle2 size={15} color="#4ade80" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span style={{ fontSize: '0.9375rem', color: 'var(--ash)', lineHeight: 1.6 }}>{t}</span>
                   </div>
-                ) : (
-                  history.map((tx) => {
-                    const statusConfig = {
-                      PENDING: { color: 'text-blue-500', bg: 'bg-blue-500/10', label: 'Processing' },
-                      SUCCESS: { color: 'text-emerald-500', bg: 'bg-emerald-500/10', label: 'Confirmed' },
-                      FAILED: { color: 'text-red-500', bg: 'bg-red-500/10', label: 'Failed' }
-                    };
-                    const status = statusConfig[tx.status];
-                    
-                    return (
-                      <div key={tx.id} className="flex gap-4 group">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 group-hover:opacity-100 transition-all ${status.bg} border-white/10 group-hover:bg-white/10`}>
-                          {tx.status === 'PENDING' && <RefreshCw className={`w-4 h-4 animate-spin ${status.color}`} />}
-                          {tx.status === 'SUCCESS' && <CheckCircle2 className={`w-4 h-4 ${status.color}`} />}
-                          {tx.status === 'FAILED' && <AlertTriangle className={`w-4 h-4 ${status.color}`} />}
-                          {(tx.type === 'TRANSFER' || tx.type === 'DEPOSIT') && tx.status !== 'PENDING' && <ArrowRightLeft className="w-4 h-4 text-zinc-400" />}
-                          {tx.type === 'CHECK_IN' && tx.status !== 'PENDING' && <Heart className="w-4 h-4 text-zinc-400" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-bold truncate">{tx.type}</span>
-                            <span className="text-[10px] text-zinc-600">
-                              {new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-                          <div className={`text-[11px] truncate ${status.color}`}>
-                            {status.label} • {tx.amount ? `${tx.amount} XLM` : 'Protocol Signal'}
-                          </div>
-                          {tx.hash && (
-                            <a 
-                              href={`https://stellar.expert/explorer/testnet/tx/${tx.hash}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-2 inline-flex items-center gap-1 text-[10px] text-blue-500 hover:text-blue-400 transition-colors"
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              Explorer
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* How it works */}
+        <section id="how-it-works" style={{ padding: '5rem 2rem', maxWidth: 1100, margin: '0 auto', borderTop: '1px solid var(--border)' }}>
+          <div className="ornament" style={{ marginBottom: '3rem' }}>
+            <span className="label-caps">How it works</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem' }}>
+            {[
+              { n: '01', title: 'Connect', desc: 'Link your Freighter or MetaMask Stellar wallet.' },
+              { n: '02', title: 'Configure', desc: 'Set nominees, inactivity thresholds, and distribution phases.' },
+              { n: '03', title: 'Stay active', desc: 'Periodic check-ins reset your inactivity clock.' },
+              { n: '04', title: 'Auto-execute', desc: 'If inactivity is detected, assets distribute per your phases.' },
+            ].map((step, i) => (
+              <div key={i} className="vault-card animate-fade-up" style={{ padding: '1.5rem', animationDelay: `${i * 0.08}s` }}>
+                <div className="label-gold" style={{ fontSize: '2rem', fontFamily: 'var(--font-display)', marginBottom: '0.875rem', opacity: 0.5 }}>{step.n}</div>
+                <div style={{ fontWeight: 600, fontSize: '0.9375rem', marginBottom: '0.5rem' }}>{step.title}</div>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--ash)', lineHeight: 1.6 }}>{step.desc}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* CTA */}
+        <section style={{ padding: '5rem 2rem 7rem', maxWidth: 680, margin: '0 auto', textAlign: 'center' }}>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(2.5rem, 5vw, 4rem)', letterSpacing: '-0.02em', lineHeight: 1.05, marginBottom: '1.25rem' }}>
+            Your legacy deserves<br />
+            <em style={{ color: 'var(--gold)', fontStyle: 'italic' }}>a contingency plan.</em>
+          </h2>
+          <p style={{ color: 'var(--ash)', fontSize: '1rem', lineHeight: 1.7, marginBottom: '2.5rem' }}>
+            Set it up once. Let the protocol handle the rest.
+          </p>
+          <button onClick={handleConnect} disabled={isConnecting} className="btn-primary" style={{ padding: '0.875rem 2.5rem', fontSize: '0.9375rem' }}>
+            {isConnecting ? <RefreshCw size={15} className="animate-spin" /> : <Shield size={15} />}
+            {isConnecting ? 'Connecting…' : 'Open the Vault'}
+          </button>
+        </section>
+
+        {/* Footer */}
+        <footer style={{ borderTop: '1px solid var(--border)', padding: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Shield size={14} color="var(--gold)" />
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: '1rem' }}>Continuum</span>
+            <span className="label-caps" style={{ marginLeft: '0.5rem' }}>© 2026</span>
+          </div>
+          <div style={{ display: 'flex', gap: '1.5rem' }}>
+            {['Docs', 'Audit', 'Terms'].map(l => <a key={l} href="#" className="label-caps" style={{ color: 'var(--smoke)', textDecoration: 'none', transition: 'color 0.2s' }} onMouseEnter={e => (e.currentTarget.style.color = 'var(--ash)')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--smoke)')}>{l}</a>)}
+          </div>
+          <span className="label-caps" style={{ color: 'var(--smoke)' }}>Stellar Testnet · v1.0.4</span>
+        </footer>
+
+        {/* Error */}
+        <AnimatePresence>
+          {error && (
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }} style={{ position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 200 }}>
+              <div className="vault-card" style={{ padding: '1rem 1.25rem', display: 'flex', gap: '0.75rem', alignItems: 'center', borderLeft: '3px solid #f87171', maxWidth: 400 }}>
+                <AlertTriangle size={15} color="#f87171" style={{ flexShrink: 0 }} />
+                <span style={{ fontSize: '0.875rem', color: 'var(--ash)', flex: 1 }}>{error}</span>
+                <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--smoke)', padding: 4 }}><X size={14} /></button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Wallet modal */}
+        <AnimatePresence>{showWalletModal && <WalletModal onClose={() => setShowWalletModal(false)} onConnect={connectToWallet} />}</AnimatePresence>
+      </div>
+    );
+  }
+
+  /* ── DASHBOARD ────────────────────────────────────────────────── */
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--paper)', color: 'var(--cream)', fontFamily: 'var(--font-body)' }}>
+
+      {/* Header */}
+      <header style={{ borderBottom: '1px solid var(--border)', height: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 2rem', position: 'sticky', top: 0, zIndex: 50, background: 'rgba(19,18,15,0.95)', backdropFilter: 'blur(12px)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 28, height: 28, background: 'var(--gold)', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Shield size={14} color="var(--ink)" strokeWidth={2.5} />
+          </div>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem' }}>Continuum</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.375rem 0.875rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 2 }}>
+            <span className="status-dot" />
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--ash)' }}>{publicKey.slice(0, 6)}…{publicKey.slice(-6)}</span>
+            {selectedWallet && <span className="tag tag-gold">{selectedWallet}</span>}
+          </div>
+          <button onClick={handleDisconnect} className="label-caps" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--smoke)', transition: 'color 0.2s' }} onMouseEnter={e => (e.currentTarget.style.color = 'var(--ash)')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--smoke)')}>Disconnect</button>
+        </div>
+      </header>
+
+      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '2.5rem 2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '2rem' }}>
+
+          {/* ── Left column ── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+            {/* Hero status card */}
+            <div className="vault-card" style={{ padding: '2.5rem', position: 'relative', overflow: 'hidden' }}>
+              {/* watermark */}
+              <div style={{ position: 'absolute', right: '-1rem', top: '-1rem', opacity: 0.03, pointerEvents: 'none' }}>
+                <Shield size={220} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '2rem', alignItems: 'start', position: 'relative' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                    <span className="tag tag-gold">Protocol Active</span>
+                    <span className="label-caps" style={{ color: 'var(--smoke)' }}>ID: CTN-{publicKey.slice(-4).toUpperCase()}</span>
+                  </div>
+                  <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(2rem, 4vw, 3rem)', lineHeight: 1.05, letterSpacing: '-0.02em', marginBottom: '0.875rem', color: 'var(--cream)' }}>
+                    Your legacy<br /><em style={{ color: 'var(--gold)', fontStyle: 'italic' }}>is secured.</em>
+                  </h1>
+                  <p style={{ fontSize: '0.875rem', color: 'var(--ash)', lineHeight: 1.7, maxWidth: 420, marginBottom: '1.75rem' }}>
+                    Continuum is monitoring your Stellar account. Assets are programmed for automatic transition upon inactivity.
+                  </p>
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <button onClick={handleCheckIn} disabled={isCheckingIn} className="btn-primary">
+                      {isCheckingIn ? <RefreshCw size={14} className="animate-spin" /> : <Heart size={14} />}
+                      {isCheckingIn ? 'Sending…' : 'Check In'}
+                    </button>
+                    <button onClick={handleResetActivity} disabled={isResetting} className="btn-ghost">
+                      {isResetting ? <RefreshCw size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                      Reset
+                    </button>
+                    <button onClick={() => setShowSendModal(true)} className="btn-ghost">
+                      <ArrowUpRight size={14} /> Transfer
+                    </button>
+                  </div>
+                </div>
+
+                {/* Days counter */}
+                <div style={{ textAlign: 'center', paddingLeft: '2rem', borderLeft: '1px solid var(--border)' }}>
+                  <div className="label-caps" style={{ marginBottom: '0.75rem' }}>Days Remaining</div>
+                  <div className="vault-number">{daysRemaining ?? '—'}</div>
+                  <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--ash)' }}>
+                    {daysRemaining === null ? 'Set inactivity threshold' : 'until trigger'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Stats row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <WalletBalance userAddress={publicKey} pollInterval={5000} />
+              <div className="vault-card" style={{ padding: '1.5rem' }}>
+                <div className="label-caps" style={{ marginBottom: '1.25rem' }}>Nominees</div>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '3rem', lineHeight: 1, color: 'var(--cream)', marginBottom: '0.5rem' }}>{currentNominees.length}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--ash)' }}>
+                  {currentNominees.length === 0 ? 'No nominees configured' : `${nomineesTotalPct.toFixed(0)}% allocated`}
+                </div>
+              </div>
+            </div>
+
+            {/* Inactivity status */}
+            {inactivityStatus && inactivityThresholdMs && (
+              <div>
+                <InactivityStatus status={inactivityStatus} threshold={inactivityThresholdMs} />
+                {inactivityStatus.isInactive && (
+                  <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button onClick={handleExecuteDistribution} disabled={isExecutingDistribution} className="btn-primary">
+                      {isExecutingDistribution ? <RefreshCw size={14} className="animate-spin" /> : <ArrowRightLeft size={14} />}
+                      {isExecutingDistribution ? 'Executing…' : 'Execute Distribution'}
+                    </button>
+                  </div>
                 )}
               </div>
-            </div>
+            )}
 
-            {/* Configuration Section Header */}
-            <div className="border-t border-white/5 pt-8">
-              <div className="macro-label text-white/60 mb-8">Configuration & Staging</div>
-            </div>
+            {/* Config sections */}
+            <Nominees initialNominees={currentNominees} locked={isNomineesLocked} onSave={async (nominees) => {
+              if (!publicKey) return;
+              const wallet = selectedWallet || WalletType.FREIGHTER;
+              setStagedNominees(p => ({ ...p, [publicKey]: nominees }));
+              localStorage.setItem(STORAGE_KEYS.nominees(publicKey), JSON.stringify(nominees));
+              const res = await contractService.setNominees(publicKey, nominees.map((n: any) => ({ address: n.address, role: roleIdToSymbol(String(n.role || 'beneficiary')), bps: Math.round((parseFloat(n.percentage) || 0) * 100) })), (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet));
+              addToast(res.success ? { status: 'success', message: 'Nominees saved', detail: `${nominees.length} nominees stored on-chain` } : { status: 'failed', message: 'Save failed', detail: res.error });
+            }} />
 
-            {/* Configuration Panels */}
-            <div className="grid grid-cols-1 gap-8">
-              <ConditionalRemittance onSave={(conditions) => {
-                console.log('Conditional Remittance saved:', conditions);
-                addToast({
-                  status: 'success',
-                  title: 'Conditions Saved',
-                  description: `${conditions.length} conditions configured`
-                });
+            <StagedReleaseTimeline initialStages={currentTimeline} locked={isTimelineLocked} onSave={(stages) => {
+              if (!publicKey) return;
+              setStagedTimeline(p => ({ ...p, [publicKey]: stages }));
+              localStorage.setItem(STORAGE_KEYS.timeline(publicKey), JSON.stringify(stages));
+              const wallet = selectedWallet || WalletType.FREIGHTER;
+              contractService.setTimeline(publicKey, stages.map((s: any) => ({ when: Math.floor(new Date(s.date).getTime() / 1000), amount: xlmToStroopsString(String(s.amount || '0')), memo: s.description?.trim() ? String(s.description).trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 12) : 'NONE' })), (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet)).then(res => addToast(res.success ? { status: 'success', message: 'Timeline saved', detail: `${stages.length} stages on-chain` } : { status: 'failed', message: 'Save failed', detail: res.error }));
+            }} />
+
+            <div>
+              <InactivityDistribution nominees={currentNominees} initialPhases={currentDistributions} locked={isDistributionsLocked} onSave={(distributions) => {
+                if (!publicKey) return;
+                setStagedDistributions(p => ({ ...p, [publicKey]: distributions }));
+                localStorage.setItem(STORAGE_KEYS.distributions(publicKey), JSON.stringify(distributions));
+                const minDays = Math.min(...distributions.map((p: any) => p.inactivityDays));
+                setVault(p => p ? { ...p, threshold: minDays * 86400000 } : p);
+                const wallet = selectedWallet || WalletType.FREIGHTER;
+                contractService.setDistributions(publicKey, distributions.map((p: any) => ({ inactivity_days: Number(p.inactivityDays), entries: Object.entries(p.distributions || {}).map(([id, pct]) => { const n = currentNominees.find((x: any) => x.id === id); if (!n) return null; const bps = Math.round((parseFloat(String(pct)) || 0) * 100); return bps > 0 ? { address: n.address, bps } : null; }).filter(Boolean) })), (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet)).then(res => addToast(res.success ? { status: 'success', message: 'Distribution saved', detail: `${distributions.length} phases on-chain` } : { status: 'failed', message: 'Save failed', detail: res.error }));
               }} />
+              <p style={{ fontSize: '0.75rem', color: 'var(--ash)', marginTop: '0.5rem', paddingLeft: '0.25rem' }}>Earliest phase determines the inactivity trigger.</p>
+            </div>
+          </div>
+
+          {/* ── Right sidebar ── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+            {/* Account */}
+            <div className="vault-card" style={{ padding: '1.25rem' }}>
+              <div className="label-caps" style={{ marginBottom: '1rem' }}>Connected Account</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                <div style={{ width: 36, height: 36, borderRadius: 2, background: selectedWallet === WalletType.METAMASK ? 'rgba(232,147,74,0.1)' : 'rgba(74,222,128,0.08)', border: `1px solid ${selectedWallet === WalletType.METAMASK ? 'rgba(232,147,74,0.2)' : 'rgba(74,222,128,0.15)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {selectedWallet === WalletType.METAMASK ? <Cpu size={15} color="var(--amber)" /> : <Wallet size={15} color="#4ade80" />}
+                </div>
+                <div>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--cream)', wordBreak: 'break-all' }}>{publicKey}</div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--ash)', marginTop: 2 }}>{selectedWallet === WalletType.METAMASK ? 'MetaMask Stellar Snap' : 'Freighter · Stellar Network'}</div>
+                </div>
+              </div>
             </div>
 
-            <ContractInteraction 
-              userAddress={publicKey}
-              selectedWallet={selectedWallet || WalletType.FREIGHTER}
-              signTransaction={async (xdr: string) => {
-                return await stellarService.signXDR(xdr, publicKey, selectedWallet || WalletType.FREIGHTER);
-              }}
-            />
-
-            <div className="p-8 rounded-3xl bg-blue-600/5 border border-blue-600/10">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center">
-                  <Info className="w-4 h-4 text-blue-500" />
-                </div>
-                <div className="text-xs font-bold text-blue-500 uppercase tracking-widest">Protocol Tip</div>
+            {/* Vault deposit */}
+            <div className="vault-card" style={{ padding: '1.25rem' }}>
+              <div className="label-caps" style={{ marginBottom: '0.625rem' }}>Vault Deposit</div>
+              <p style={{ fontSize: '0.75rem', color: 'var(--ash)', lineHeight: 1.6, marginBottom: '0.875rem' }}>
+                Auto-distribution only acts on funds deposited into the contract vault.
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--ash)' }}>Vault balance</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--cream)' }}>{stroopsToXlmString(vaultBalanceStroops)} XLM</span>
               </div>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Regular life signals ensure the protocol remains in 'ACTIVE' state. If the trigger reaches 0, the distribution sequence initiates automatically.
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input type="number" step="0.01" min="0" value={depositXlm} onChange={e => setDepositXlm(e.target.value)} placeholder="Amount (XLM)" className="vault-input" style={{ flex: 1, fontSize: '0.8125rem', padding: '0.625rem 0.75rem' }} />
+                <button onClick={handleDeposit} disabled={isDepositing || !depositXlm.trim()} className="btn-primary" style={{ padding: '0.625rem 1rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                  {isDepositing ? <RefreshCw size={12} className="animate-spin" /> : null}
+                  {isDepositing ? '…' : 'Deposit'}
+                </button>
+              </div>
+            </div>
+
+            {/* Protocol health */}
+            <div className="vault-card" style={{ padding: '1.25rem' }}>
+              <div className="label-caps" style={{ marginBottom: '1rem' }}>Protocol Health</div>
+              {[
+                { label: 'Soroban Runtime', val: 'Operational', color: '#4ade80' },
+                { label: 'Inactivity Clock', val: 'Synced', color: '#4ade80' },
+                { label: 'Distribution Key', val: 'Encrypted', color: 'var(--gold)' },
+                { label: 'Network Latency', val: '12 ms', color: 'var(--ash)' },
+              ].map((r, i) => (
+                <div key={i} className="stat-row">
+                  <span style={{ fontSize: '0.8rem', color: 'var(--ash)' }}>{r.label}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: r.color }}>{r.val}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Activity log */}
+            <div className="vault-card" style={{ padding: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                <div className="label-caps">Activity Log</div>
+                <History size={13} color="var(--smoke)" />
+              </div>
+              <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                {history.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '2rem 0', fontSize: '0.8125rem', color: 'var(--smoke)', fontStyle: 'italic' }}>No activity yet.</div>
+                ) : history.map(tx => {
+                  const isSuccess = tx.status === 'SUCCESS';
+                  const isFail = tx.status === 'FAILED';
+                  return (
+                    <div key={tx.id} className="log-entry">
+                      <div style={{ width: 30, height: 30, borderRadius: 2, background: isSuccess ? 'rgba(74,222,128,0.06)' : isFail ? 'rgba(248,113,113,0.06)' : 'rgba(214,175,100,0.06)', border: `1px solid ${isSuccess ? 'rgba(74,222,128,0.15)' : isFail ? 'rgba(248,113,113,0.15)' : 'rgba(214,175,100,0.15)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {tx.status === 'PENDING' && <RefreshCw size={12} className="animate-spin" color="var(--gold)" />}
+                        {tx.status === 'SUCCESS' && <CheckCircle2 size={12} color="#4ade80" />}
+                        {tx.status === 'FAILED' && <AlertTriangle size={12} color="#f87171" />}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--cream)' }}>{tx.type === 'CHECK_IN' ? 'Check-In' : tx.type === 'DEPOSIT' ? 'Deposit' : 'Transfer'}</span>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--ash)' }}>{new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--ash)' }}>{tx.amount ? `${tx.amount} XLM` : 'Proof-of-life'}</div>
+                        {tx.hash && <a href={`https://stellar.expert/explorer/testnet/tx/${tx.hash}`} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.65rem', color: 'var(--gold-dim)', textDecoration: 'none', marginTop: 3 }} onMouseEnter={e => (e.currentTarget.style.color = 'var(--gold)')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--gold-dim)')}><ExternalLink size={10} /> Explorer</a>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Tip */}
+            <div style={{ padding: '1rem', background: 'rgba(214,175,100,0.04)', border: '1px solid var(--border-warm)', borderRadius: 2, borderLeft: '3px solid var(--gold-dim)' }}>
+              <div className="label-gold" style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: 6 }}><Info size={12} /> Tip</div>
+              <p style={{ fontSize: '0.8rem', color: 'var(--ash)', lineHeight: 1.65, margin: 0 }}>
+                Regular check-ins keep the protocol in Active state. When the trigger reaches 0, distribution initiates automatically.
               </p>
             </div>
 
-            {/* Staged Nominees Display */}
+            {/* Contract + Conditional Remittance */}
+            <ConditionalRemittance onSave={(c) => addToast({ status: 'success', message: 'Conditions saved', detail: `${c.length} conditions configured` })} />
+            <ContractInteraction userAddress={publicKey} selectedWallet={selectedWallet || WalletType.FREIGHTER} signTransaction={async (xdr: string) => stellarService.signXDR(xdr, publicKey, selectedWallet || WalletType.FREIGHTER)} />
+
+            {/* Nominees summary */}
             {currentNominees.length > 0 && (
-              <div className="glass-card p-6">
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="w-9 h-9 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                    <Users className="w-4 h-4 text-purple-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold">Configured Nominees</h3>
-                    <p className="text-xs text-zinc-500">Your staged beneficiary distribution</p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  {currentNominees.map((nominee, idx) => (
-                    <div key={nominee.id} className="p-3 bg-white/5 border border-purple-500/20 rounded-lg">
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold text-zinc-300 mb-1">Nominee {idx + 1}</div>
-                          <div className="text-[11px] font-mono text-purple-400 truncate">{nominee.address}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-xl font-bold text-purple-500">{nominee.percentage}%</div>
-                          <div className="text-[11px] text-zinc-500 capitalize">{nominee.role}</div>
-                        </div>
-                      </div>
+              <div className="vault-card" style={{ padding: '1.25rem' }}>
+                <div className="label-caps" style={{ marginBottom: '1rem' }}>Nominee Summary</div>
+                {currentNominees.map((n: any, i: number) => (
+                  <div key={n.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.625rem 0', borderBottom: i < currentNominees.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <div>
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--cream)' }}>{n.address.slice(0, 10)}…</div>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--ash)', textTransform: 'capitalize', marginTop: 1 }}>{n.role}</div>
                     </div>
-                  ))}
-                </div>
+                    <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.375rem', color: 'var(--gold)' }}>{n.percentage}%</span>
+                  </div>
+                ))}
               </div>
             )}
 
-            {/* Staged Timeline Display */}
-            {currentTimeline.length > 0 && (
-              <div className="glass-card p-6">
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                    <Clock className="w-4 h-4 text-blue-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold">Configured Release Schedule</h3>
-                    <p className="text-xs text-zinc-500">{currentTimeline.length} stage(s) configured</p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  {currentTimeline.map((stage, idx) => (
-                    <div key={stage.id} className="p-3 bg-white/5 border border-blue-500/20 rounded-lg">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold text-zinc-300 mb-1">Stage {idx + 1}</div>
-                          <div className="text-[11px] text-zinc-400 mb-1">{new Date(stage.date).toLocaleDateString()} at {new Date(stage.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                          {stage.description && <div className="text-[11px] text-zinc-500 italic truncate">{stage.description}</div>}
-                        </div>
-                        <div className="text-right">
-                          <div className="text-xl font-bold text-blue-500">{stage.amount}</div>
-                          <div className="text-[11px] text-zinc-500">XLM</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Configured Distribution Phases Display */}
+            {/* Distribution phases summary */}
             {currentDistributions.length > 0 && (
-              <div className="glass-card p-6">
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="w-9 h-9 rounded-lg bg-slate-500/10 flex items-center justify-center">
-                    <Clock className="w-4 h-4 text-slate-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold">Configured Distribution Phases</h3>
-                    <p className="text-xs text-zinc-500">{currentDistributions.length} phase(s) configured</p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  {currentDistributions
-                    .sort((a, b) => a.inactivityDays - b.inactivityDays)
-                    .map((phase, idx) => {
-                      const distributions = phase.distributions as Record<string, string>;
-                      const phaseTotal = Object.values(distributions).reduce(
-                        (sum: number, pct: string) => sum + (parseFloat(pct) || 0),
-                        0
-                      );
-                      return (
-                        <div key={phase.id} className="p-3 bg-white/5 border border-slate-500/20 rounded-lg">
-                          <div className="text-xs font-semibold text-zinc-300 mb-2">
-                            Phase {idx + 1}: If inactive for {phase.inactivityDays} days
-                          </div>
-                          <div className="space-y-1">
-                            {Object.entries(distributions)
-                              .filter(([_, pct]) => parseFloat(pct) > 0)
-                              .map(([nomineeId, pct]) => {
-                                const nominee = currentNominees.find(n => n.id === nomineeId);
-                                return (
-                                  <div key={nomineeId} className="text-[11px] text-zinc-400">
-                                    {nominee ? `${nominee.address.slice(0, 10)}... (${nominee.role})` : nomineeId}: 
-                                    <span className="text-slate-400 font-semibold"> {pct}%</span>
-                                  </div>
-                                );
-                              })}
-                          </div>
-                          <div className="mt-2 text-[11px] font-mono bg-white/5 px-2 py-1 rounded text-zinc-500">
-                            Total: {phaseTotal.toFixed(2)}%
-                          </div>
-                        </div>
-                      );
+              <div className="vault-card" style={{ padding: '1.25rem' }}>
+                <div className="label-caps" style={{ marginBottom: '1rem' }}>Distribution Phases</div>
+                {[...currentDistributions].sort((a: any, b: any) => a.inactivityDays - b.inactivityDays).map((p: any, i: number) => (
+                  <div key={p.id} style={{ padding: '0.75rem 0', borderBottom: i < currentDistributions.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--cream)', marginBottom: '0.375rem' }}>Phase {i + 1} — {p.inactivityDays}d inactive</div>
+                    {Object.entries(p.distributions as Record<string, string>).filter(([_, pct]) => parseFloat(pct) > 0).map(([id, pct]) => {
+                      const n = currentNominees.find((x: any) => x.id === id);
+                      return <div key={id} style={{ fontSize: '0.75rem', color: 'var(--ash)', display: 'flex', justifyContent: 'space-between' }}><span>{n ? n.address.slice(0, 10) + '…' : id}</span><span style={{ color: 'var(--gold-dim)' }}>{pct}%</span></div>;
                     })}
-                </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
       </main>
 
-      {/* Wallet Selection Modal */}
-      <AnimatePresence>
-        {showWalletModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-            <motion.div 
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setShowWalletModal(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-md"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative z-10 w-full max-w-md glass-card p-6 sm:p-10 shadow-2xl"
-            >
-              <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-bold tracking-tight">Connect Wallet</h2>
-                <button onClick={() => setShowWalletModal(false)} className="p-2 hover:bg-white/5 rounded-full transition-colors">
-                  <X className="w-6 h-6 text-zinc-500" />
-                </button>
-              </div>
+      {/* Footer */}
+      <footer style={{ borderTop: '1px solid var(--border)', padding: '1.5rem 2rem', marginTop: '3rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Shield size={13} color="var(--gold)" />
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.9375rem' }}>Continuum</span>
+        </div>
+        <span className="label-caps" style={{ color: 'var(--smoke)' }}>Stellar Testnet · v1.0.4</span>
+      </footer>
 
-              <div className="space-y-4">
-                <button 
-                  onClick={() => connectToWallet(WalletType.FREIGHTER)}
-                  className="w-full p-6 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4 hover:bg-white/10 hover:border-blue-500/30 transition-all group text-left"
-                >
-                  <div className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20 group-hover:bg-blue-500/20 transition-colors">
-                    <Shield className="w-6 h-6 text-blue-500" />
-                  </div>
-                  <div>
-                    <div className="font-bold text-lg">Freighter</div>
-                    <div className="text-xs text-zinc-500">Native Stellar Wallet</div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-zinc-700 ml-auto group-hover:text-white transition-colors" />
-                </button>
+      {/* Modals */}
+      <AnimatePresence>{showWalletModal && <WalletModal onClose={() => setShowWalletModal(false)} onConnect={connectToWallet} />}</AnimatePresence>
 
-                <button 
-                  onClick={() => connectToWallet(WalletType.METAMASK)}
-                  className="w-full p-6 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4 hover:bg-white/10 hover:border-orange-500/30 transition-all group text-left"
-                >
-                  <div className="w-12 h-12 bg-orange-500/10 rounded-xl flex items-center justify-center border border-orange-500/20 group-hover:bg-orange-500/20 transition-colors">
-                    <Cpu className="w-6 h-6 text-orange-500" />
-                  </div>
-                  <div>
-                    <div className="font-bold text-lg">MetaMask</div>
-                    <div className="text-xs text-zinc-500">Via Stellar Snap</div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-zinc-700 ml-auto group-hover:text-white transition-colors" />
-                </button>
-              </div>
-
-              <p className="mt-8 text-center text-xs text-zinc-600 leading-relaxed">
-                By connecting your wallet, you agree to our Terms of Service and Privacy Policy.
-              </p>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Transaction Modal */}
       <AnimatePresence>
         {showSendModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-            <motion.div 
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setShowSendModal(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-md"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative z-10 w-full max-w-lg glass-card p-6 sm:p-10 shadow-2xl"
-            >
-              <div className="flex items-center justify-between mb-10">
-                <h2 className="text-2xl font-bold tracking-tight">Transfer Assets</h2>
-                <button onClick={() => setShowSendModal(false)} className="p-2 hover:bg-white/5 rounded-full transition-colors">
-                  <X className="w-6 h-6 text-zinc-500" />
-                </button>
+          <Modal onClose={() => { setShowSendModal(false); setTxStatus('idle'); setDestAddress(''); setSendAmount(''); }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', marginBottom: '1.75rem' }}>Transfer Assets</div>
+
+            {txStatus === 'idle' && (
+              <form onSubmit={handleSendXLM} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                <div>
+                  <div className="label-caps" style={{ marginBottom: '0.5rem' }}>Recipient address</div>
+                  <input type="text" required value={destAddress} onChange={e => setDestAddress(e.target.value)} placeholder="G…" className="vault-input" />
+                </div>
+                <div>
+                  <div className="label-caps" style={{ marginBottom: '0.5rem' }}>Amount (XLM)</div>
+                  <input type="number" step="0.0000001" required value={sendAmount} onChange={e => setSendAmount(e.target.value)} placeholder="0.00" className="vault-input" />
+                </div>
+                {txError && <div style={{ fontSize: '0.8125rem', color: '#f87171' }}>{txError}</div>}
+                <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '0.875rem' }}>Confirm Transfer</button>
+              </form>
+            )}
+
+            {txStatus === 'pending' && (
+              <div style={{ textAlign: 'center', padding: '3rem 0' }}>
+                <RefreshCw size={40} className="animate-spin" color="var(--gold)" style={{ margin: '0 auto 1.25rem' }} />
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', marginBottom: '0.5rem' }}>Processing…</div>
+                <div style={{ fontSize: '0.875rem', color: 'var(--ash)' }}>Awaiting wallet signature.</div>
               </div>
+            )}
 
-              {txStatus === 'idle' && (
-                <form onSubmit={handleSendXLM} className="space-y-8">
-                  <div className="space-y-6">
-                    <div>
-                      <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Recipient Address</label>
-                      <input 
-                        type="text" 
-                        required
-                        value={destAddress}
-                        onChange={(e) => setDestAddress(e.target.value)}
-                        placeholder="G..."
-                        className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-sm focus:outline-none focus:border-blue-500/50 transition-all placeholder:text-zinc-700"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Amount (XLM)</label>
-                      <div className="relative">
-                        <input 
-                          type="number" 
-                          step="0.0000001"
-                          required
-                          value={sendAmount}
-                          onChange={(e) => setSendAmount(e.target.value)}
-                          placeholder="0.00"
-                          className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-sm focus:outline-none focus:border-blue-500/50 transition-all placeholder:text-zinc-700"
-                        />
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-600">XLM</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button 
-                    type="submit"
-                    className="w-full py-5 btn-primary text-base flex items-center justify-center gap-3"
-                  >
-                    Confirm Transfer
-                  </button>
-                </form>
-              )}
-
-              {txStatus === 'pending' && (
-                <div className="py-20 text-center">
-                  <div className="relative w-24 h-24 mx-auto mb-10">
-                    <RefreshCw className="w-24 h-24 text-blue-500 animate-spin opacity-20" />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <Database className="w-10 h-10 text-blue-500" />
-                    </div>
-                  </div>
-                  <h3 className="text-2xl font-bold mb-3 tracking-tight">Processing...</h3>
-                  <p className="text-zinc-500 text-sm">Awaiting signature from your wallet extension.</p>
+            {txStatus === 'success' && (
+              <div style={{ textAlign: 'center', padding: '2rem 0' }}>
+                <CheckCircle2 size={48} color="#4ade80" style={{ margin: '0 auto 1.25rem' }} />
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', marginBottom: '0.75rem' }}>Transfer Complete</div>
+                <div style={{ fontSize: '0.875rem', color: 'var(--ash)', marginBottom: '1.75rem' }}>{sendAmount} XLM sent successfully.</div>
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+                  {txHash && <a href={`https://stellar.expert/explorer/testnet/tx/${txHash}`} target="_blank" rel="noreferrer" className="btn-ghost" style={{ textDecoration: 'none', fontSize: '0.8125rem' }}><ExternalLink size={13} /> Explorer</a>}
+                  <button onClick={() => { setShowSendModal(false); setTxStatus('idle'); setDestAddress(''); setSendAmount(''); }} className="btn-primary" style={{ fontSize: '0.8125rem' }}>Done</button>
                 </div>
-              )}
+              </div>
+            )}
 
-              {txStatus === 'success' && (
-                <div className="py-12 text-center">
-                  <div className="w-24 h-24 bg-emerald-500/10 rounded-3xl flex items-center justify-center mx-auto mb-10 border border-emerald-500/20">
-                    <CheckCircle2 className="w-12 h-12 text-emerald-500" />
-                  </div>
-                  <h3 className="text-3xl font-bold mb-4 tracking-tight">Transfer Complete</h3>
-                  <div className="p-6 bg-white/5 border border-white/5 rounded-2xl mb-10 text-left space-y-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-zinc-500">Status</span>
-                      <span className="text-emerald-500 font-bold">Confirmed</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-zinc-500">Amount</span>
-                      <span className="text-white font-bold">{sendAmount} XLM</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-zinc-500">Network</span>
-                      <span className="text-white">Stellar Testnet</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-4">
-                    <a 
-                      href={`https://stellar.expert/explorer/testnet/tx/${txHash}`} 
-                      target="_blank" 
-                      rel="noreferrer"
-                      className="w-full py-4 btn-secondary text-sm flex items-center justify-center gap-2"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      View on Explorer
-                    </a>
-                    <button 
-                      onClick={() => {
-                        setShowSendModal(false);
-                        setTxStatus('idle');
-                        setDestAddress('');
-                        setSendAmount('');
-                      }}
-                      className="w-full py-4 btn-primary text-sm"
-                    >
-                      Done
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {txStatus === 'error' && (
-                <div className="py-12 text-center">
-                  <div className="w-24 h-24 bg-red-500/10 rounded-3xl flex items-center justify-center mx-auto mb-10 border border-red-500/20">
-                    <AlertTriangle className="w-12 h-12 text-red-500" />
-                  </div>
-                  <h3 className="text-3xl font-bold mb-4 tracking-tight">Transfer Failed</h3>
-                  <div className="p-6 bg-red-500/5 border border-red-500/10 rounded-2xl mb-10 text-left">
-                    <div className="text-xs font-bold text-red-400 uppercase tracking-widest mb-2">Error Details</div>
-                    <p className="text-sm text-red-400/80 leading-relaxed">{txError}</p>
-                  </div>
-                  <button 
-                    onClick={() => setTxStatus('idle')}
-                    className="w-full py-4 btn-secondary text-sm"
-                  >
-                    Try Again
-                  </button>
-                </div>
-              )}
-            </motion.div>
-          </div>
+            {txStatus === 'error' && (
+              <div style={{ textAlign: 'center', padding: '2rem 0' }}>
+                <AlertTriangle size={48} color="#f87171" style={{ margin: '0 auto 1.25rem' }} />
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', marginBottom: '0.75rem' }}>Transfer Failed</div>
+                <div style={{ fontSize: '0.875rem', color: '#f87171', marginBottom: '1.75rem' }}>{txError}</div>
+                <button onClick={() => setTxStatus('idle')} className="btn-ghost">Try Again</button>
+              </div>
+            )}
+          </Modal>
         )}
       </AnimatePresence>
 
-      <footer className="border-t border-white/5 py-12 sm:py-16 bg-black/20 mt-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-10 sm:gap-12">
-          <div className="flex items-center gap-3">
-            <div className="w-6 h-6 bg-white rounded flex items-center justify-center">
-              <Shield className="w-3.5 h-3.5 text-black" />
-            </div>
-            <span className="font-bold tracking-tight text-lg">Continuum</span>
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-12 text-sm font-medium text-zinc-500">
-            <a href="#" className="hover:text-white transition-colors">Documentation</a>
-            <a href="#" className="hover:text-white transition-colors">Audit</a>
-            <a href="#" className="hover:text-white transition-colors">Security</a>
-          </div>
-          <div className="text-xs font-mono text-zinc-700 uppercase tracking-[0.2em]">
-            Stellar_Testnet // v1.0.4
-          </div>
-        </div>
-      </footer>
-      
-      {/* Transaction Toast Notifications */}
       <TransactionToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SHARED MODAL WRAPPER
+═══════════════════════════════════════════════════════════════════ */
+function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }} />
+      <motion.div initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.97 }} transition={{ type: 'spring', stiffness: 300, damping: 28 }} style={{ position: 'relative', zIndex: 1, background: 'var(--surface)', border: '1px solid var(--border-warm)', borderRadius: 4, padding: '2rem', width: '100%', maxWidth: 480, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
+        <button onClick={onClose} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--smoke)', padding: 4 }} onMouseEnter={e => (e.currentTarget.style.color = 'var(--ash)')} onMouseLeave={e => (e.currentTarget.style.color = 'var(--smoke)')}><X size={16} /></button>
+        {children}
+      </motion.div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   WALLET MODAL
+═══════════════════════════════════════════════════════════════════ */
+function WalletModal({ onClose, onConnect }: { onClose: () => void; onConnect: (t: WalletType) => void }) {
+  return (
+    <Modal onClose={onClose}>
+      <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', marginBottom: '0.375rem' }}>Connect Wallet</div>
+      <div style={{ fontSize: '0.8125rem', color: 'var(--ash)', marginBottom: '1.75rem' }}>Choose your Stellar wallet to continue.</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        {[
+          { type: WalletType.FREIGHTER, label: 'Freighter', sub: 'Native Stellar wallet', icon: Shield, color: '#4ade80' },
+          { type: WalletType.METAMASK, label: 'MetaMask', sub: 'Via Stellar Snap', icon: Cpu, color: 'var(--amber)' },
+        ].map(w => (
+          <button key={w.type} onClick={() => onConnect(w.type)} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: 'var(--raised)', border: '1px solid var(--border)', borderRadius: 2, cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.2s, background 0.2s' }} onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-warm)'; (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface)'; }} onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLButtonElement).style.background = 'var(--raised)'; }}>
+            <div style={{ width: 40, height: 40, borderRadius: 2, background: `${w.color}12`, border: `1px solid ${w.color}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <w.icon size={18} color={w.color} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--cream)' }}>{w.label}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--ash)', marginTop: 2 }}>{w.sub}</div>
+            </div>
+            <ChevronRight size={15} color="var(--smoke)" />
+          </button>
+        ))}
+      </div>
+      <p style={{ marginTop: '1.25rem', fontSize: '0.75rem', color: 'var(--smoke)', textAlign: 'center', lineHeight: 1.6 }}>
+        By connecting, you agree to our Terms of Service.
+      </p>
+    </Modal>
   );
 }
