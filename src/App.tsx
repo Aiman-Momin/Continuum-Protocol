@@ -8,7 +8,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { VaultStatus, VaultState, Beneficiary } from './types';
 import { stellarService, WalletType } from './services/stellarService';
-import { contractService } from './services/contractService';
+import { contractService, NATIVE_TOKEN_CONTRACT_ID } from './services/contractService';
 import ContractInteraction from './components/ContractInteraction';
 import WalletBalance from './components/WalletBalance';
 import StagedReleaseTimeline from './components/StagedReleaseTimeline';
@@ -214,7 +214,16 @@ export default function App() {
       let avail = type === WalletType.FREIGHTER ? await stellarService.checkFreighter() : await stellarService.checkMetaMask();
       if (!avail) { setError(`${type} wallet not detected. Please install the extension.`); setIsConnecting(false); return; }
       const address = await stellarService.connectWallet(type);
-      if (address) { setPublicKey(address); setSelectedWallet(type); await refreshAccountData(address); }
+      if (address) {
+        setPublicKey(address);
+        setSelectedWallet(type);
+        const wallet = type;
+        // One-time contract init (no-op if already initialized on-chain).
+        contractService
+          .init(address, NATIVE_TOKEN_CONTRACT_ID, (xdr) => stellarService.signXDR(xdr, address, wallet))
+          .catch((e) => console.warn('[App] contract init:', e));
+        await refreshAccountData(address);
+      }
     } catch (err: any) { setError(err.message || "Connection failed."); }
     finally { setIsConnecting(false); }
   };
@@ -240,6 +249,11 @@ export default function App() {
     const wallet = selectedWallet || WalletType.FREIGHTER;
     setIsDepositing(true);
     try {
+      await contractService.init(
+        publicKey,
+        NATIVE_TOKEN_CONTRACT_ID,
+        (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet),
+      );
       const res = await contractService.deposit(publicKey, xlmToStroopsString(depositXlm), (xdr: string) => stellarService.signXDR(xdr, publicKey, wallet));
       if (res.success) {
         addToast({ status: 'success', message: 'Deposit successful', detail: `${depositXlm} XLM deposited`, hash: res.hash });
