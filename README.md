@@ -38,22 +38,6 @@ Wallets: Freighter + MetaMask (Stellar Snap)
 Smart Contracts: Soroban (Rust)
 Styling: Tailwind CSS
 
-## 📸 Screenshots
-
-### Landing Page
-![Landing Page](./landing.png)
-
-### Balance Displayed
-![Balance](./balance.png)
-
-### Initiating Transaction
-![Send Transaction](./send.png)
-
-### Successful Transaction
-![Transaction Success](./success.png)
-
-### Proof of Life
-![Proof of Life](./activity.png)
 
 ## Smart Contract Details
 Contract Address:
@@ -83,8 +67,6 @@ Transactions are signed and submitted
 Contract state updates and UI syncs in real-time
 Proof-of-Life actions are recorded on-chain
 
-## Live Demo
-https://continuum-protocol.vercel.app/
 
 ## User Feedback
 We welcome user feedback to improve Continuum Protocol. Please share your suggestions, bug reports, and ideas in the feedback spreadsheet:
